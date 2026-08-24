@@ -2,7 +2,7 @@ import json
 import sys
 import threading
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 
 try:
@@ -10,13 +10,20 @@ try:
 except ImportError:
     webview = None
 
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+except ImportError:
+    openpyxl = None
+
 from ui import UI_HTML
 from brand import AVATAR_DATA_URI
 
 UI_HTML = UI_HTML.replace("const AVATAR_URI=null;",
                           'const AVATAR_URI="%s";' % AVATAR_DATA_URI)
 
-APP_NAME = "Session Logger"
+APP_NAME = "OpenTimeLogger"
 
 def app_dir():
     if getattr(sys, "frozen", False):
@@ -28,6 +35,15 @@ DATA_FILE = BASE_DIR / "sessions.json"
 
 FMT = "%Y-%m-%dT%H:%M:%S"
 FMT_SHORT = "%Y-%m-%dT%H:%M"
+
+DURATION_OPTIONS = {
+    "Today": ("today", None),
+    "Last 3 days": ("days", 3),
+    "Last 7 days": ("days", 7),
+    "Last 12 days": ("days", 12),
+    "Last 30 days": ("days", 30),
+    "All time": ("all", None),
+}
 
 
 def parse_time(v):
@@ -55,6 +71,69 @@ def new_session(start_iso):
     return {"id": uuid.uuid4().hex, "start": start_iso, "end": None,
             "category": "", "tag": "", "sub_tag": "", "describe": "", "notes": "",
             "doc_seconds": 0}
+
+
+def filter_sessions(rows, category, tag, duration_label):
+    mode, n = DURATION_OPTIONS.get(duration_label, ("all", None))
+    now = datetime.now()
+    start_of_today = datetime(now.year, now.month, now.day)
+    out = []
+    for r in rows:
+        try:
+            start = parse_time(r["start"])
+        except Exception:
+            continue
+        if start is None:
+            continue
+        if mode == "today" and start < start_of_today:
+            continue
+        if mode == "days" and start < now - timedelta(days=n):
+            continue
+        if category != "All categories" and r.get("category", "") != category:
+            continue
+        if tag != "All tags" and r.get("tag", "") != tag:
+            continue
+        out.append(r)
+    return out
+
+
+def build_workbook(rows, keep_category_col):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sessions"
+
+    header = ["Start", "End", "Duration (min)"]
+    if keep_category_col:
+        header.append("Category")
+    header += ["Tag", "Sub-tag", "Describe", "Notes"]
+    ws.append(header)
+
+    fill = PatternFill("solid", fgColor="3E6B54")
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = fill
+        cell.alignment = Alignment(vertical="center")
+
+    for r in sorted(rows, key=lambda x: x.get("start", ""), reverse=True):
+        try:
+            dur = round((parse_time(r["end"]) - parse_time(r["start"])).total_seconds() / 60)
+        except Exception:
+            dur = 0
+        row = [r["start"], r["end"], dur]
+        if keep_category_col:
+            row.append(r.get("category", ""))
+        row += [r.get("tag", ""), r.get("sub_tag", ""),
+                r.get("describe", ""), r.get("notes", "")]
+        ws.append(row)
+
+    widths = {"Start": 20, "End": 20, "Duration (min)": 14, "Category": 16,
+              "Tag": 16, "Sub-tag": 16, "Describe": 46, "Notes": 30}
+    for idx in range(1, len(header) + 1):
+        ws.column_dimensions[get_column_letter(idx)].width = widths.get(header[idx - 1], 14)
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    return wb
 
 
 class Store:
@@ -301,6 +380,23 @@ class Api:
         self.store.sessions.remove(s)
         self.store._save()
         return self._ok()
+
+    def export_excel(self, category, tag, duration_label):
+        if openpyxl is None:
+            return {"error": "openpyxl is not installed. Run: python -m pip install openpyxl"}
+        rows = [s for s in self.store.sessions
+                if s.get("end") and s.get("kind") != "daily-doc-summary"]
+        rows = filter_sessions(rows, category, tag, duration_label)
+        if not rows:
+            return {"error": "No sessions match this filter."}
+        keep_cat = category == "All categories"
+        wb = build_workbook(rows, keep_cat)
+        out_dir = DATA_FILE.parent / "exports"
+        out_dir.mkdir(exist_ok=True)
+        path = out_dir / ("sessions_%s.xlsx" % datetime.now().strftime("%Y%m%d_%H%M%S"))
+        wb.save(path)
+        return {"path": str(path), "count": len(rows),
+                "category_col": keep_cat}
 
 
 def main():

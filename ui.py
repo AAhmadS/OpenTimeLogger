@@ -125,6 +125,7 @@ main::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:8px
     <div class="segmented" id="seg">
       <button class="seg active" data-tab="active">Active</button>
       <button class="seg" data-tab="archive">Archive</button>
+      <button class="seg" data-tab="export">Export</button>
     </div>
     <div class="list" id="sideList"></div>
     <div class="side-actions">
@@ -151,6 +152,7 @@ let activeSid=null;
 let lastKey=0;
 let docTick=null;
 const AVATAR_URI=null;
+const DUR_OPTS=["Today","Last 3 days","Last 7 days","Last 12 days","Last 30 days","All time"];
 
 const $=(s,root=document)=>root.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -186,6 +188,10 @@ function render(){
 
 function renderSide(){
   const list=document.getElementById("sideList");
+  if(tab==="export"){
+    list.innerHTML=`<div class="empty">Pick filters in the panel, then export a .xlsx.</div>`;
+    return;
+  }
   const isActive=tab==="active";
   const items=sessions().filter(s=>isActive?!s.end:s.end);
   items.sort((a,b)=>isActive?a.start.localeCompare(b.start):b.start.localeCompare(a.start));
@@ -207,6 +213,7 @@ function renderSide(){
 
 function renderMain(){
   const main=document.getElementById("main");
+  if(tab==="export"){activeSid=null;main.innerHTML=exportViewHtml();bindExport();return;}
   const s=sel?byId(sel):null;
   if(!s){activeSid=null;main.innerHTML=newViewHtml();bindNew();return;}
   main.innerHTML=detailHtml(s);bindDetail(s);watchDoc(s);
@@ -241,6 +248,50 @@ function newViewHtml(){
       <div class="row"><button class="btn primary" id="psGo">Create finished session</button></div>
     </div>
   </div>`;
+}
+
+function exportViewHtml(){
+  const pool=sessions().filter(s=>s.end&&!s.kind);
+  const cats=[...new Set(pool.map(s=>s.category).filter(Boolean))];
+  const tags=[...new Set(pool.map(s=>s.tag).filter(Boolean))];
+  const opt=(v,sel)=>`<option${v===sel?" selected":""}>${esc(v)}</option>`;
+  return `<div class="cards">
+    <div class="card glass fade">
+      <div class="card-h"><span class="dot" style="background:var(--accent)"></span><div class="card-t">Export to Excel</div></div>
+      <p class="muted">Filter finished sessions by category, tag and date range, then export a .xlsx workbook next to the app. When a single category is selected, the Category column is dropped.</p>
+      <div class="grid3">
+        <label>Category<select id="exCat" class="input"><option>All categories</option>${cats.map(c=>opt(c,"")).join("")}</select></label>
+        <label>Tag<select id="exTag" class="input"><option>All tags</option>${tags.map(t=>opt(t,"")).join("")}</select></label>
+        <label>Range<select id="exDur" class="input">${DUR_OPTS.map(d=>opt(d,"Last 12 days")).join("")}</select></label>
+      </div>
+      <p class="muted" id="exCount"></p>
+      <div class="row"><button class="btn primary" id="exGo">Export to Excel</button></div>
+    </div>
+  </div>`;
+}
+
+function bindExport(){
+  const refresh=()=>{
+    const cat=$("#exCat").value,tag=$("#exTag").value,dur=$("#exDur").value;
+    const now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const days={["Today"]:0,["Last 3 days"]:3,["Last 7 days"]:7,["Last 12 days"]:12,["Last 30 days"]:30,["All time"]:Infinity};
+    const cutoff=dur==="Today"?today:new Date(now.getTime()-days[dur]*86400000);
+    const n=sessions().filter(s=>{
+      if(!s.end||s.kind)return false;
+      if(cat!=="All categories"&&s.category!==cat)return false;
+      if(tag!=="All tags"&&s.tag!==tag)return false;
+      return new Date(s.start)>=cutoff;
+    }).length;
+    $("#exCount").textContent=n?`${n} session(s) will be exported.`:"No sessions match this filter.";
+  };
+  ["exCat","exTag","exDur"].forEach(id=>document.getElementById(id).addEventListener("change",refresh));
+  refresh();
+  $("#exGo").addEventListener("click",async()=>{
+    const r=await pywebview.api.export_excel($("#exCat").value,$("#exTag").value,$("#exDur").value);
+    if(r.error)return toast(r.error,"err");
+    const name=String(r.path).split(/[\\/]/).pop();
+    toast(`Exported ${r.count} session(s) as ${name}`);
+  });
 }
 
 function detailHtml(s){
@@ -371,8 +422,8 @@ document.getElementById("seg").addEventListener("click",e=>{
   const b=e.target.closest(".seg");if(!b)return;
   tab=b.dataset.tab;sel=null;render();
 });
-document.getElementById("newBtn").addEventListener("click",()=>{sel=null;render();});
-document.getElementById("pastBtn").addEventListener("click",()=>{sel=null;render();});
+document.getElementById("newBtn").addEventListener("click",()=>{tab="active";sel=null;render();});
+document.getElementById("pastBtn").addEventListener("click",()=>{tab="active";sel=null;render();});
 
 async function init(){state=await pywebview.api.get_state();render();
   const bi=document.getElementById("brandImg");if(bi&&AVATAR_URI)bi.src=AVATAR_URI;
