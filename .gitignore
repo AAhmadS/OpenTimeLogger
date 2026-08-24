@@ -1,0 +1,15 @@
+# user data — never committed
+sessions.json
+exports/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# build artifacts
+build/
+dist/
+*.spec
+SessionLogger.exe
