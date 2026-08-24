@@ -13,3 +13,4 @@ build/
 dist/
 *.spec
 SessionLogger.exe
+OpenTimeLogger.exe
