@@ -92,6 +92,10 @@ main{overflow-y:auto;padding:22px}
 main::-webkit-scrollbar{width:8px}
 main::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:8px}
 .cards{display:flex;flex-direction:column;gap:16px;max-width:640px;margin:0 auto;padding-top:8px}
+.hero{border-color:rgba(94,194,127,.35);box-shadow:0 10px 36px rgba(0,0,0,.38), 0 0 0 1px rgba(94,194,127,.14), inset 0 1px 0 rgba(255,255,255,.10)}
+.hero .orb{width:58px;height:58px;border-radius:50%;margin:0 auto 14px;background:radial-gradient(circle at 35% 30%, rgba(94,194,127,.95), rgba(61,138,92,.9));box-shadow:0 0 0 10px rgba(94,194,127,.08), 0 0 26px rgba(94,194,127,.35), inset 0 -6px 14px rgba(0,0,0,.25);animation:breathe 3s ease-in-out infinite}
+@keyframes breathe{0%,100%{box-shadow:0 0 0 10px rgba(94,194,127,.08), 0 0 26px rgba(94,194,127,.35)}50%{box-shadow:0 0 0 17px rgba(94,194,127,.04), 0 0 42px rgba(94,194,127,.5)}}
+.btn.big{padding:14px 20px;font-size:15px}
 .card{padding:20px}
 .card-h{display:flex;align-items:center;gap:10px;margin-bottom:4px}
 .card-t{font-size:16px;font-weight:650}
@@ -221,7 +225,8 @@ function renderMain(){
 
 function newViewHtml(){
   return `<div class="cards">
-    <div class="card glass fade">
+    <div class="card glass fade hero">
+      <div class="orb"></div>
       <div class="card-h"><span class="dot" style="background:var(--accent)"></span><div class="card-t">Start a session</div></div>
       <p class="muted">Logs a start time. Begin right now, or tell it when the session actually started.</p>
       <div class="chips" id="nsChips" style="margin-bottom:12px">
@@ -236,7 +241,7 @@ function newViewHtml(){
         <label>Sub-tag<input id="nsSub" class="input"></label>
       </div>
       <label>Describe (what you did)<textarea id="nsDesc" class="input ta" rows="2"></textarea></label>
-      <div class="row"><button class="btn primary" id="nsGo">Start session</button></div>
+      <div class="row"><button class="btn primary big full" id="nsGo">Start session</button></div>
     </div>
     <div class="card glass fade">
       <div class="card-h"><span class="dot" style="background:var(--info)"></span><div class="card-t">Log a finished session</div></div>
@@ -379,7 +384,7 @@ function bindDetail(s){
     $("#deGo").addEventListener("click",async()=>{
       const payload=deMode==="now"?{type:"now"}:{type:"at",value:$("#deAt").value};
       const r=await pywebview.api.end_session(s.id,payload);
-      if(r.error)toast(r.error,"err");else{state=r;sel=s.id;render();toast("Session ended. Fill the details to finish.");}
+      if(r.error)toast(r.error,"err");else{state=r;sel=s.id;tab="archive";render();toast("Session ended. Fill the details to finish.");}
     });
     $("#edSave").addEventListener("click",saveDetail);
     $("#edDel").addEventListener("click",del);
