@@ -3,7 +3,7 @@ UI_HTML = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Session Logger</title>
+<title>OpenTimeLogger</title>
 <style>
 :root{
   --bg1:#0d131d; --bg2:#18212e;
@@ -123,8 +123,8 @@ main::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:8px
 <div class="app">
   <aside class="glass">
     <div class="brand">
-      <img id="brandImg" class="brand-img" alt="Session Logger">
-      <span>Session Logger</span>
+      <img id="brandImg" class="brand-img" alt="OpenTimeLogger">
+      <span>OpenTimeLogger</span>
     </div>
     <div class="segmented" id="seg">
       <button class="seg active" data-tab="active">Active</button>
