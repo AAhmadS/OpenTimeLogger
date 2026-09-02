@@ -289,32 +289,43 @@ let exportsCache=[];
 let renderQueued=false;
 const AVATAR_URI=null;
 const DUR_OPTS=["Today","Last 3 days","Last 7 days","Last 12 days","Last 30 days","All time"];
-// theme: light beside dark, persisted, respects OS, glass in both
+// theme: light beside dark, persisted, respects OS, glass in both — safe for pywebview (no localStorage on about:blank)
 (function(){
   const key="interval-theme";
-  const saved=localStorage.getItem(key);
-  const prefersLight=window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+  let saved=null;
+  try{ saved=localStorage.getItem(key); }catch(e){}
+  let prefersLight=false;
+  try{ prefersLight=window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches; }catch(e){}
   const initial=saved || (prefersLight?"light":"dark");
-  document.documentElement.setAttribute("data-theme", initial);
+  try{ document.documentElement.setAttribute("data-theme", initial); }catch(e){}
   const updateIcon=()=>{
-    const cur=document.documentElement.getAttribute("data-theme");
-    const sun=document.querySelector(".icon-sun"), moon=document.querySelector(".icon-moon");
-    if(sun&&moon){ sun.style.display=cur==="dark"?"block":"none"; moon.style.display=cur==="light"?"block":"none"; }
+    try{
+      const cur=document.documentElement.getAttribute("data-theme");
+      const sun=document.querySelector(".icon-sun"), moon=document.querySelector(".icon-moon");
+      if(sun&&moon){ sun.style.display=cur==="dark"?"block":"none"; moon.style.display=cur==="light"?"block":"none"; }
+    }catch(e){}
   };
-  // run after DOM ready
   if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", updateIcon);
   else updateIcon();
   window.__setTheme=(next)=>{
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem(key, next);
+    try{ document.documentElement.setAttribute("data-theme", next); }catch(e){}
+    try{ localStorage.setItem(key, next); }catch(e){}
     updateIcon();
   };
-  window.matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", e=>{
-    if(!localStorage.getItem(key)){
-      document.documentElement.setAttribute("data-theme", e.matches?"light":"dark");
-      updateIcon();
+  try{
+    const mql=window.matchMedia("(prefers-color-scheme: light)");
+    const handler=(e)=>{
+      let curSaved=null; try{ curSaved=localStorage.getItem(key); }catch(ex){}
+      if(!curSaved){
+        try{ document.documentElement.setAttribute("data-theme", e.matches?"light":"dark"); }catch(ex){}
+        updateIcon();
+      }
+    };
+    if(mql){
+      if(mql.addEventListener) mql.addEventListener("change", handler);
+      else if(mql.addListener) mql.addListener(handler);
     }
-  });
+  }catch(e){}
 })();
 
 const $=(s,root=document)=>root.querySelector(s);
@@ -628,7 +639,8 @@ function bindExport(){
     const el=document.getElementById("exCount");
     if(el) el.textContent=n?`${n} session(s) will be exported.  ·  4 sheets: Sessions + By Category + By Tag + Documentation daily.`:"No sessions match this filter.";
     const preview=document.getElementById("exPreview");
-    const custom=(document.getElementById("exName")?.value||"").trim();
+    const exNameEl=document.getElementById("exName");
+    const custom=(exNameEl ? exNameEl.value : "") .trim();
     const auto=autoName(cat,tag,dur);
     if(preview){
       if(custom) preview.textContent=`Will save as: ${sanitize(custom).replace(/\.xlsx$/i,"")}.xlsx  (auto would be ${auto})`;
@@ -637,11 +649,12 @@ function bindExport(){
   };
   bindCustomSelects(document.getElementById("mainScroll"), refresh);
   refresh();
-  document.getElementById("exName")?.addEventListener("input", refresh);
-  document.getElementById("exRefresh")?.addEventListener("click", loadExports);
+  const exNameEl2=document.getElementById("exName"); if(exNameEl2) exNameEl2.addEventListener("input", refresh);
+  const exRefreshEl=document.getElementById("exRefresh"); if(exRefreshEl) exRefreshEl.addEventListener("click", loadExports);
   document.getElementById("exGo").addEventListener("click",async()=>{
     const cat=getCSelectValue("exCat")||"All categories", tag=getCSelectValue("exTag")||"All tags", dur=getCSelectValue("exDur")||"Last 12 days";
-    const custom=(document.getElementById("exName")?.value||"").trim();
+    const exNameEl3=document.getElementById("exName");
+    const custom=(exNameEl3 ? exNameEl3.value : "").trim();
     const r=await pywebview.api.export_excel(cat,tag,dur, custom||null);
     if(r.error) return toast(r.error,"err");
     const name=String(r.path).split(/[\\/]/).pop();
@@ -810,11 +823,11 @@ document.getElementById("seg").addEventListener("click",e=>{
 });
 document.getElementById("newBtn").addEventListener("click",()=>{tab="active";sel=null;scheduleRender();});
 document.getElementById("pastBtn").addEventListener("click",()=>{tab="active";sel=null;scheduleRender();document.getElementById("mainScroll").scrollTop=0;});
-document.getElementById("themeBtn")?.addEventListener("click",()=>{
+const themeBtnEl=document.getElementById("themeBtn"); if(themeBtnEl) themeBtnEl.addEventListener("click",()=>{
   const cur=document.documentElement.getAttribute("data-theme");
   const next=cur==="dark"?"light":"dark";
-  document.documentElement.setAttribute("data-theme", next);
-  localStorage.setItem("interval-theme", next);
+  try{ document.documentElement.setAttribute("data-theme", next); }catch(e){}
+  try{ localStorage.setItem("interval-theme", next); }catch(e){}
   const sun=document.querySelector(".icon-sun"), moon=document.querySelector(".icon-moon");
   if(sun&&moon){ sun.style.display=next==="dark"?"block":"none"; moon.style.display=next==="light"?"block":"none"; }
 });
