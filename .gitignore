@@ -1,6 +1,15 @@
 # user data — never committed
 sessions.json
 exports/
+ai_config.json
+tasks.json
+insights.json
+ai_reports.json
+dpo_dataset.jsonl
+preview.html
+*.png
+!assets/*.png
+!screenshots/*.png
 
 # python
 __pycache__/
@@ -8,9 +17,11 @@ __pycache__/
 .venv/
 venv/
 
-# build artifacts
+# build artifacts (the spec IS tracked — the build must be reproducible from git)
 build/
 dist/
-*.spec
 SessionLogger.exe
 OpenTimeLogger.exe
+
+# local tooling
+.playwright-mcp/

@@ -20,13 +20,23 @@ try:
 except ImportError:
     openpyxl = None
 
+try:
+    import analytics as _analytics
+except ImportError:
+    _analytics = None
+
+try:
+    import ai as _ai
+except ImportError:
+    _ai = None
+
 from ui import UI_HTML
 from brand import AVATAR_DATA_URI
 
 UI_HTML = UI_HTML.replace("const AVATAR_URI=null;",
                           'const AVATAR_URI="%s";' % AVATAR_DATA_URI)
 
-APP_NAME = "Interval"
+APP_NAME = "OpenTimeLogger"
 
 def app_dir():
     if getattr(sys, "frozen", False):
@@ -424,12 +434,151 @@ class Api:
         self._last_rollover_day = None
         self._last_doc_total = None
         self._maybe_rollover()
+        self._win = None
 
     def _ok(self):
         self._maybe_rollover()
         # store.sessions is kept sorted desc on every mutation, so no sort needed here
         # (previous version sorted on every call => O(n log n) on each tab visit)
         return {"sessions": self.store.sessions[:]}
+
+    # ---------- window controls (frameless titlebar) ----------
+    def win_minimize(self):
+        if self._win:
+            self._win.minimize()
+        return {"ok": True}
+
+    def win_maximize(self):
+        if self._win:
+            try:
+                self._win.toggle_fullscreen()
+            except Exception:
+                self._win.maximize()
+        return {"ok": True}
+
+    def win_close(self):
+        if self._win:
+            self._win.destroy()
+        return {"ok": True}
+
+    def win_resize(self, width, height):
+        if self._win and width and height:
+            try:
+                self._win.resize(int(width), int(height))
+            except Exception:
+                pass
+        return {"ok": True}
+
+    # ---------- analytics ----------
+    def dashboard_stats(self, range_key="30d"):
+        if _analytics is None:
+            return {"error": "analytics module missing"}
+        try:
+            return _analytics.compute_dashboard(range_key)
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ---------- AI bridge (BYOK) ----------
+    def ai_status(self):
+        return {"available": _ai is not None}
+
+    def ai_get_config(self):
+        return _ai.load_config() if _ai else {"error": "ai module missing"}
+
+    def ai_save_config(self, cfg):
+        return _ai.save_config(cfg) if _ai else {"error": "ai module missing"}
+
+    def ai_add_key(self, provider, label, key):
+        return _ai.add_key(provider, label, key) if _ai else {"error": "ai module missing"}
+
+    def ai_remove_key(self, key_id):
+        return _ai.remove_key(key_id) if _ai else {"error": "ai module missing"}
+
+    def ai_set_agent(self, agent_id, provider, key_id, model):
+        return _ai.set_agent(agent_id, provider, key_id, model) if _ai else {"error": "ai module missing"}
+
+    def ai_test_model(self, provider, key_id, model):
+        return _ai.test_model(provider, key_id, model, "chat") if _ai else {"error": "ai module missing"}
+
+    def ai_list_models(self, provider, task="chat"):
+        return _ai.list_models(provider, task) if _ai else {"error": "ai module missing"}
+
+    def ai_start_pipeline(self):
+        return _ai.start_pipeline() if _ai else {"error": "ai module missing"}
+
+    def ai_pipeline_status(self):
+        return _ai.get_pipeline_status() if _ai else {"error": "ai module missing"}
+
+    def ai_get_reports(self):
+        return _ai.get_reports() if _ai else {"error": "ai module missing"}
+
+    def ai_get_tasks(self):
+        return _ai.get_tasks() if _ai else {"error": "ai module missing"}
+
+    def ai_save_tasks(self, tasks):
+        return _ai.save_tasks(tasks) if _ai else {"error": "ai module missing"}
+
+    def ai_toggle_proposition(self, task_id, prop_id, accepted):
+        return _ai.toggle_proposition(task_id, prop_id, accepted) if _ai else {"error": "ai module missing"}
+
+    def ai_get_insights(self):
+        return _ai.get_insights() if _ai else {"error": "ai module missing"}
+
+    def ai_run_coach(self):
+        return _ai.run_coach(_ai.load_config()) if _ai else {"error": "ai module missing"}
+
+    def ai_set_consent(self, value):
+        return _ai.set_consent(bool(value)) if _ai else {"error": "ai module missing"}
+
+    def ai_export_dpo(self):
+        return _ai.export_dpo_rows() if _ai else {"error": "ai module missing"}
+
+    def ai_set_ideal_time(self, days, start, end):
+        return _ai.set_ideal_time(days, start, end) if _ai else {"error": "ai module missing"}
+
+    def ai_fallback(self, agent_id):
+        if not _ai:
+            return {"error": "ai module missing"}
+        cfg = _ai.load_config()
+        a = (cfg.get("agents") or {}).get(agent_id) or {}
+        return _ai.fallback_model(agent_id, a.get("provider"), a.get("key_id"), a.get("model"))
+
+    def ai_agents(self):
+        return _ai.agents_catalog() if _ai else {"error": "ai module missing"}
+
+    def ai_providers(self):
+        return _ai.providers_catalog() if _ai else {"error": "ai module missing"}
+
+    # ---------- ASR recording (Python-side mic capture) ----------
+    def asr_begin(self):
+        try:
+            import sounddevice as sd
+        except ImportError:
+            return {"error": "sounddevice not installed"}
+        if getattr(self, "_asr", None):
+            return {"error": "already recording"}
+        import audio_capture as _ac
+        self._asr = _ac.Recorder()
+        return self._asr.begin()
+
+    def asr_stop(self, provider, key_id, model):
+        rec = getattr(self, "_asr", None)
+        if not rec:
+            return {"error": "not recording"}
+        self._asr = None
+        audio = rec.stop()
+        if not audio:
+            return {"error": "no audio captured"}
+        return _ai.transcribe(audio, provider, key_id, model) if _ai else {"error": "ai module missing"}
+
+    def asr_state(self):
+        rec = getattr(self, "_asr", None)
+        if not rec:
+            return {"recording": False, "seconds": 0}
+        return {"recording": True, "seconds": rec.seconds()}
+
+    def asr_transcribe(self, audio_b64, provider, key_id, model):
+        return _ai.transcribe(audio_b64, provider, key_id, model) if _ai else {"error": "ai module missing"}
 
     def _maybe_rollover(self):
         """Log an end-of-day 'documentation' summary for every completed day
@@ -761,9 +910,13 @@ def main():
         print("pywebview is not installed. Run: python -m pip install pywebview")
         return
     api = Api()
+    webview.settings["DRAG_REGION_SELECTOR"] = ".titlebar"
+    webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
     window = webview.create_window(APP_NAME, html=UI_HTML, js_api=api,
-                                   width=1120, height=740, min_size=(900, 600),
-                                   background_color="#0c111a")
+                                   width=1180, height=780, min_size=(940, 640),
+                                   frameless=True, easy_drag=False,
+                                   background_color="#0a0f16")
+    api._win = window
     window.events.closed += api.store._save
     webview.start()
 
