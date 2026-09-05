@@ -1,6 +1,12 @@
 ---
-name: graph-builder-p1
 description: Implements agent-graph Phase 1 — parts, session reports, task assignment, evidence index, change detection, D3 loop. Start here for the AI rebuild; P2/P3 build on its stores.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.2
+permission:
+  edit: allow
+  bash: allow
+  task: deny
 ---
 
 # graph-builder-p1 — Foundation + session analysis

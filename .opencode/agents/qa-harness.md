@@ -1,6 +1,12 @@
 ---
-name: qa-harness
 description: Owns verification — pytest suite, preview harness, benchmark harness, merge gates. Nothing merges without green qa-harness. Use for tests, smoke checks, and pre-commit verification.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.1
+permission:
+  edit: allow
+  bash: allow
+  task: deny
 ---
 
 # qa-harness

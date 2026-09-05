@@ -1,6 +1,12 @@
 ---
-name: docs-keeper
 description: Owns docs and memory — README, screenshots, cartography appendices, changelog coordination. The cartography BODY is frozen; only appendices may grow. Use for any documentation update.
+mode: subagent
+model: opencode-go/deepseek-v4-flash
+temperature: 0.2
+permission:
+  edit: allow
+  bash: allow
+  task: deny
 ---
 
 # docs-keeper

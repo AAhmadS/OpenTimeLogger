@@ -1,6 +1,12 @@
 ---
-name: backend-hardener
 description: Owns session_logger.py health — module splits, exception hygiene, datetime correctness, path safety, logging. Use for any backend refactor, store/export extraction, or error-handling repair.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.1
+permission:
+  edit: allow
+  bash: allow
+  task: deny
 ---
 
 # backend-hardener

@@ -1,6 +1,12 @@
 ---
-name: graph-builder-p3
 description: Implements agent-graph Phase 3 — pattern DB, style critic, chronobiology, divider, exhaustion detective, confounder checker, narrator, EOD scheduling. Requires P2 handoff. English coach prose.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.2
+permission:
+  edit: allow
+  bash: allow
+  task: deny
 ---
 
 # graph-builder-p3 — Coach suite (C1–C5) + full scheduling

@@ -1,6 +1,15 @@
 ---
-name: provider-scanner
 description: Owns the live provider catalog — per-provider model/pricing scan protocols, models_cache.json, staleness UX. Replaces the hardcoded PROVIDERS table. Blocked until security-auditor finishes keyring migration.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.1
+permission:
+  edit: allow
+  bash: allow
+  webfetch: allow
+  websearch: allow
+  playwright*: allow
+  task: deny
 ---
 
 # provider-scanner

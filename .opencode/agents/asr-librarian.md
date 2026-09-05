@@ -1,6 +1,14 @@
 ---
-name: asr-librarian
 description: Owns the ASR model allowlist — leaderboard crawls, WER evidence snapshots, availability gating. English-only per frozen requirements.
+mode: subagent
+model: opencode-go/mimo-v2.5
+temperature: 0.1
+permission:
+  edit: allow
+  bash: allow
+  webfetch: allow
+  playwright*: allow
+  task: deny
 ---
 
 # asr-librarian

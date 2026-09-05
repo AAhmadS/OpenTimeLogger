@@ -1,6 +1,12 @@
 ---
-name: security-auditor
 description: Owns secrets and trust boundaries — OS keyring migration, config validation, traversal guards, secret-leak prevention. Run FIRST in the repair phase and before any AI work.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.1
+permission:
+  edit: allow
+  bash: allow
+  task: deny
 ---
 
 # security-auditor

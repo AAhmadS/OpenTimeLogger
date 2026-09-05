@@ -1,6 +1,14 @@
 ---
-name: visual-reviewer
 description: Owns the screenshot review loop — Playwright captures, pixel + DOM checks, findings ledger. Reads only; never edits the UI. Use after any visual change.
+mode: subagent
+model: opencode-go/mimo-v2.5
+temperature: 0.1
+permission:
+  edit: deny
+  bash: allow
+  skill: allow
+  playwright*: allow
+  task: deny
 ---
 
 # visual-reviewer

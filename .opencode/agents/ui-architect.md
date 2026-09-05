@@ -1,6 +1,13 @@
 ---
-name: ui-architect
 description: Owns the frontend — ui.py split into web/ assets, skill-driven restyle, frameless chrome, SVG charts, AI workspace views. Use for any UI structure, styling, or interaction work.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.2
+permission:
+  edit: allow
+  bash: allow
+  skill: allow
+  task: deny
 ---
 
 # ui-architect

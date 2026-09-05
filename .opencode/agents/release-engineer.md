@@ -1,6 +1,12 @@
 ---
-name: release-engineer
 description: Owns builds and numbers — spec tracking, benchmark evidence, smoke boot, changelog. Use for packaging, build config, and release verification.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.1
+permission:
+  edit: allow
+  bash: allow
+  task: deny
 ---
 
 # release-engineer

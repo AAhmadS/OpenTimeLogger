@@ -1,6 +1,12 @@
 ---
-name: graph-builder-p2
 description: Implements agent-graph Phase 2 — timeline, challenges, step linking, refiner, propositions + critic, DPO builder. Requires P1 stores frozen. The highest-interaction surface.
+mode: subagent
+model: opencode-go/muse-spark-1.3-contributor
+temperature: 0.2
+permission:
+  edit: allow
+  bash: allow
+  task: deny
 ---
 
 # graph-builder-p2 — Task graph (B1–B4)

@@ -278,8 +278,7 @@ Reads logs and proposes:
 - Subagents live in `OpenTimeLogger/.opencode/agents/` (10 definitions,
   see Appendix C).
 
-### B.3 Provider live-scan protocols (owned by `provider-scanner`)
-- OpenAI: `GET /v1/models` with user key (authoritative) + docs cross-check.
+### B.3 Provider live-scan protocols (owned by `provider-scanner`)- OpenAI: `GET /v1/models` with user key (authoritative) + docs cross-check.
 - OpenRouter: keyless `GET /api/v1/models`, modality/architecture filter.
 - Mistral: `GET /v1/models` with key + Playwright docs backup.
 - Google AI Studio: `GET /v1beta/models?key=`, `supportedGenerationMethods`
@@ -294,3 +293,16 @@ Reads logs and proposes:
   `qa-harness`, `visual-reviewer`.
 - Governance: `security-auditor`, `release-engineer`, `docs-keeper`.
 - (One file per agent; `graph-builder-p*` share the T3 spec, phased.)
+
+### B.4 Subagent model mapping (locked 2026-09-05)
+- opencode agent frontmatter supports `model: provider/id` + `temperature` +
+  `permission` + `mode` — there is NO `variant` key, and neither
+  "Muse Spark 1.3 xhigh" nor "DeepSeek V4 Flash Vision Exp max" exists as a
+  model ID in this setup (verified against global agents + opencode docs).
+- Mapping used: code/intelligence agents →
+  `opencode-go/muse-spark-1.3-contributor` (the Muse Spark 1.3 family member
+  actually present); pixel-reading agents (`visual-reviewer`, `asr-librarian`)
+  → `opencode-go/mimo-v2.5` (matches global pixel-reader precedent +
+  the earlier explicit mimo order); `docs-keeper` → `opencode-go/deepseek-v4-flash`.
+- If the provider publishes the exact requested IDs later, it is a one-line
+  `model:` change per file.
