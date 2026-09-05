@@ -380,6 +380,24 @@ def get_agent(agent_id):
 
 
 def list_models(provider, task):
+    # Live cache first (provider-scanner); curated seed when stale/missing.
+    try:
+        import models as _models
+        cached = _models.cached_models(provider, task)
+        if cached.get("ok") and cached.get("source") == "live":
+            models = list(cached["models"])
+            cfg = load_config()
+            for a in cfg.get("agents", {}).values():
+                if a.get("provider") == provider and a.get("custom_model") \
+                        and a["custom_model"] not in models:
+                    models.append(a["custom_model"])
+            return {"ok": True, "models": models,
+                    "source": "live", "stale": False,
+                    "fetched_at": cached.get("fetched_at", ""),
+                    "note": cached.get("note", "")}
+        seed_note = cached.get("note", "")
+    except ImportError:
+        seed_note = ""
     meta = PROVIDERS.get(provider)
     if not meta:
         return {"ok": True, "models": [], "note": "OpenAI-compatible custom endpoint"}
@@ -394,8 +412,67 @@ def list_models(provider, task):
     for a in cfg.get("agents", {}).values():
         if a.get("provider") == provider and a.get("custom_model") and a["custom_model"] not in models:
             models.append(a["custom_model"])
-    note = "Curated catalog; custom model names are accepted" if provider == "avalai" else ""
-    return {"ok": True, "models": models, "note": note}
+    if provider == "avalai":
+        note = "Curated catalog; custom model names are accepted"
+    elif seed_note:
+        note = seed_note
+    else:
+        note = ""
+    return {"ok": True, "models": models, "note": note, "source": "seed", "stale": True}
+
+
+def _price_in(model_id):
+    """Input-token price (USD/1M) for fallback proximity: live 4D first,
+    legacy single-price table second, else None."""
+    try:
+        import models as _models
+        p = _models.price_for(model_id)
+        if p and p.get("in") is not None:
+            return float(p["in"])
+    except ImportError:
+        pass
+    v = PRICES.get(model_id)
+    if v is None:
+        v = PRICES.get(_bare_model(model_id))
+    return float(v) if v is not None else None
+
+
+def refresh_models(provider, key_id=""):
+    """Live-scan a provider's catalog (provider-scanner protocol)."""
+    try:
+        import models as _models
+    except ImportError:
+        return {"ok": False, "error": "models module missing"}
+    secret = ""
+    if key_id:
+        secret = _resolve_secret(load_config(), key_id) or ""
+    return _models.scan(provider, secret or None)
+
+
+def models_cache(provider=""):
+    try:
+        import models as _models
+    except ImportError:
+        return {"ok": False, "error": "models module missing"}
+    if provider:
+        return _models.cached_models(provider, "chat")
+    return {"ok": True, "cache": _models.read_cache()}
+
+
+def estimate_cost():
+    try:
+        import models as _models
+    except ImportError:
+        return {"ok": False, "error": "models module missing"}
+    return _models.estimate_backfill(len(_load_sessions()))
+
+
+def spend_summary():
+    try:
+        import models as _models
+    except ImportError:
+        return {"ok": False, "error": "models module missing"}
+    return _models.spend_summary()
 
 
 def _post_json(url, headers, payload, timeout=90):
@@ -528,16 +605,12 @@ def fallback_model(agent_id, selected_provider, selected_key_id, selected_model)
     agent = next((a for a in AGENTS if a["id"] == agent_id), None)
     if not agent:
         return {"ok": False, "error": "No model available"}
-    prev_price = PRICES.get(selected_model)
-    if prev_price is None:
-        prev_price = PRICES.get(bare)
+    prev_price = _price_in(selected_model)
     if prev_price is None:
         prev_price = 0.0
     cands = []
     for m in agent.get("proposed_models", []):
-        price = PRICES.get(m)
-        if price is None:
-            price = PRICES.get(_bare_model(m))
+        price = _price_in(m)
         dist = abs((price if price is not None else prev_price) - prev_price)
         cands.append((dist, m))
     cands.sort(key=lambda x: x[0])

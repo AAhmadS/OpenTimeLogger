@@ -550,6 +550,18 @@ class Api:
     def ai_list_models(self, provider, task="chat"):
         return _ai.list_models(provider, task) if _ai else {"error": "ai module missing"}
 
+    def ai_refresh_models(self, provider, key_id=""):
+        return _ai.refresh_models(provider, key_id) if _ai else {"error": "ai module missing"}
+
+    def ai_models_cache(self, provider=""):
+        return _ai.models_cache(provider) if _ai else {"error": "ai module missing"}
+
+    def ai_estimate_cost(self):
+        return _ai.estimate_cost() if _ai else {"error": "ai module missing"}
+
+    def ai_spend_summary(self):
+        return _ai.spend_summary() if _ai else {"error": "ai module missing"}
+
     def ai_start_pipeline(self):
         return _ai.start_pipeline() if _ai else {"error": "ai module missing"}
 
