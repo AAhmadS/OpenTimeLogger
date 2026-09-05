@@ -77,6 +77,7 @@ def build(outdir):
     mock = ("<script>window.__CANNED=" + json.dumps(canned, ensure_ascii=False) +
             ";window.pywebview={api:new Proxy({},{get:(t,n)=>{" +
             "if(n==='ai_tick')return async()=>({ok:true});" +
+            "if(n==='dashboard_stats')return async()=>window.__CANNED['dashboard_30d'];" +
             "if(n==='ai_list_models'){return async(p,task)=>({" +
             "ok:true,models:task==='asr'?[]:['m1','m2']," +
             "source:'seed',stale:true," +
