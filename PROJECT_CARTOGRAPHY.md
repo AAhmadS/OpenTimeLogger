@@ -278,7 +278,8 @@ Reads logs and proposes:
 - Subagents live in `OpenTimeLogger/.opencode/agents/` (10 definitions,
   see Appendix C).
 
-### B.3 Provider live-scan protocols (owned by `provider-scanner`)- OpenAI: `GET /v1/models` with user key (authoritative) + docs cross-check.
+### B.3 Provider live-scan protocols (owned by `provider-scanner`)
+- OpenAI: `GET /v1/models` with user key (authoritative) + docs cross-check.
 - OpenRouter: keyless `GET /api/v1/models`, modality/architecture filter.
 - Mistral: `GET /v1/models` with key + Playwright docs backup.
 - Google AI Studio: `GET /v1beta/models?key=`, `supportedGenerationMethods`
