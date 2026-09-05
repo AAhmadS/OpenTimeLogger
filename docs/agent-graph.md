@@ -59,6 +59,10 @@ Hard invariants:
 
 ## 3. Refinement semantics (N12)
 
+Write discipline (learned 2026-09-05, two bugs): never mutate an in-memory
+store across a `revise_entity` call — it saves per call, so any earlier
+handle is stale. Always fresh-load → mutate → save in one sequence.
+
 - **Patch** (evidence-only: refresh refs+hash, no version bump) vs **revision**
   (structural: new version + supersede chain).
 - Entity envelope: `{id, type, version, supersedes[], superseded_by, status

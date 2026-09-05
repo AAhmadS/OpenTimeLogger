@@ -508,6 +508,26 @@ class Api:
     def ai_graph_status(self):
         return _graph.graph_status() if _graph else {"error": "graph module missing"}
 
+    def ai_task_template(self, task_id):
+        return _graph.get_task_template(task_id) if _graph else {"error": "graph module missing"}
+
+    def ai_run_task_graph(self):
+        if not _graph or not _ai:
+            return {"error": "graph module missing"}
+        return _graph.run_task_graph(_ai.load_config())
+
+    def ai_user_edit(self, task_id, section, eid, fields):
+        return _graph.user_edit_entity(task_id, section, eid, fields) if _graph else {"error": "graph module missing"}
+
+    def ai_accept_proposal(self, task_id, proposal_id, accept):
+        return _graph.accept_proposal(task_id, proposal_id, accept) if _graph else {"error": "graph module missing"}
+
+    def ai_toggle_proposition_v2(self, task_id, prop_id, accepted):
+        return _graph.toggle_proposition_v2(task_id, prop_id, accepted) if _graph else {"error": "graph module missing"}
+
+    def ai_export_dpo2(self):
+        return _graph.export_dpo_rows_v2() if _graph else {"error": "graph module missing"}
+
     def ai_set_agent(self, agent_id, provider, key_id, model):
         return _ai.set_agent(agent_id, provider, key_id, model) if _ai else {"error": "ai module missing"}
 

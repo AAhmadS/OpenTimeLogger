@@ -502,7 +502,589 @@ def graph_status():
     st = _scheduler_state()
     reports = _read_json("session_reports.json", {})
     tasks = _read_json("tasks.json", {})
+    templates = tasks.get("templates", {}) if isinstance(tasks, dict) else {}
     return {"ok": True, "scheduler": st,
             "reports": len(reports.get("reports", [])) if isinstance(reports, dict) else 0,
             "memberships": len(tasks.get("memberships", [])) if isinstance(tasks, dict) else 0,
+            "templates": len(templates),
             "recent_runs": read_runs(10)}
+
+
+# =====================================================================
+# Phase 2 — task graph (graph-builder-p2): N6/N7/N8/N12/N10/N11/N13
+# =====================================================================
+
+def _templates_store():
+    store = _read_json("tasks.json", {})
+    if not isinstance(store, dict):
+        store = {}
+    store.setdefault("templates", {})
+    store.setdefault("revisions", [])
+    return store
+
+
+def _save_templates_store(store):
+    store["updated_at"] = _now()
+    _write_json("tasks.json", store)
+
+
+def _get_template(task_id):
+    return _templates_store().get("templates", {}).get(task_id)
+
+
+def get_task_template(task_id):
+    t = _get_template(task_id)
+    if not t:
+        return {"ok": False, "error": "Task not found"}
+    return {"ok": True, "template": t}
+
+
+# ---------------- N12 — Refiner / Revision Engine ----------------
+
+def _envelope(ent_type, eid, payload, by="agent", evidence_refs=None):
+    return {"id": eid, "type": ent_type, "version": 1, "supersedes": [],
+            "superseded_by": None, "status": "active",
+            "created_by": by, "ai_improvised": False,
+            "user_feedback": {"checked_in": None, "edited_at": None, "edited_fields": []},
+            "evidence_refs": evidence_refs or [],
+            "payload": payload, "updated_at": _now()}
+
+
+def _ledger(store, task_id, entity, from_v, to_v, by, reason):
+    store.setdefault("revisions", []).append(
+        {"ts": _now(), "task_id": task_id, "entity": entity,
+         "from_v": from_v, "to_v": to_v, "by": by, "reason": reason})
+
+
+def revise_entity(task_id, section, eid, payload, by="agent",
+                  evidence_refs=None, improvised=False, reason=""):
+    """Patch-or-revise one entity inside a task template (N12).
+
+    - user_authoritative entities: agent output goes to `proposed` (max 1
+      pending), never active. User output applies directly.
+    - structural agent change: version bump + supersede chain + ledger.
+    Returns {ok, status, version}.
+    """
+    store = _templates_store()
+    t = store["templates"].get(task_id)
+    if not t:
+        return {"ok": False, "error": "Task not found"}
+    entities = t.setdefault(section, [])
+    cur = next((e for e in entities if e.get("id") == eid), None)
+    if cur and cur.get("status") == "user_authoritative" and by == "agent":
+        prop = dict(cur)
+        prop["payload"] = payload
+        prop["proposed_for"] = eid
+        prop["status"] = "proposed"
+        prop["updated_at"] = _now()
+        if improvised:
+            prop["ai_improvised"] = True
+        # max 1 pending proposal per entity
+        t.setdefault("proposals", [])
+        t["proposals"] = [p for p in t["proposals"]
+                          if p.get("proposed_for") != eid]
+        prop["id"] = "%s@proposed" % eid
+        t["proposals"].append(prop)
+        _ledger(store, task_id, eid, cur.get("version"), cur.get("version"),
+                "agent", "proposed (user-owned): %s" % reason)
+        _save_templates_store(store)
+        return {"ok": True, "status": "proposed", "version": cur.get("version")}
+    if cur is None:
+        ent = _envelope(section, eid, payload, by, evidence_refs)
+        if improvised:
+            ent["ai_improvised"] = True
+        entities.append(ent)
+        _ledger(store, task_id, eid, 0, 1, by, reason or "created")
+    else:
+        old_v = cur.get("version", 1)
+        cur["supersedes"] = (cur.get("supersedes") or []) + [old_v]
+        cur["version"] = old_v + 1
+        cur["payload"] = payload
+        if evidence_refs is not None:
+            cur["evidence_refs"] = evidence_refs
+        if improvised:
+            cur["ai_improvised"] = True
+        if by == "user":
+            cur["status"] = "user_authoritative"
+            cur["user_feedback"]["edited_at"] = _now()
+        cur["updated_at"] = _now()
+        _ledger(store, task_id, eid, old_v, cur["version"], by, reason or "revised")
+    _save_templates_store(store)
+    ent = next(e for e in entities if e.get("id") == eid)
+    return {"ok": True, "status": ent["status"], "version": ent["version"]}
+
+
+def user_edit_entity(task_id, section, eid, fields):
+    """User edit path: applies directly and marks user_authoritative."""
+    store = _templates_store()
+    t = store["templates"].get(task_id)
+    if not t:
+        return {"ok": False, "error": "Task not found"}
+    cur = next((e for e in (t.get(section) or []) if e.get("id") == eid), None)
+    if not cur:
+        return {"ok": False, "error": "Entity not found"}
+    payload = dict(cur.get("payload") or {})
+    payload.update(fields or {})
+    cur["user_feedback"]["edited_fields"] = sorted(
+        set(cur["user_feedback"].get("edited_fields") or []) | set((fields or {}).keys()))
+    # bypass the agent-propose branch by writing as user
+    _save_templates_store(store)
+    return revise_entity(task_id, section, eid, payload, by="user",
+                         reason="user edit")
+
+
+def accept_proposal(task_id, proposal_id, accept):
+    """Resolve a pending AI proposal: accept applies it (new version),
+    reject drops it. Exactly one outcome; proposals never auto-apply."""
+    store = _templates_store()
+    t = store["templates"].get(task_id)
+    if not t:
+        return {"ok": False, "error": "Task not found"}
+    prop = next((p for p in (t.get("proposals") or []) if p.get("id") == proposal_id), None)
+    if not prop:
+        return {"ok": False, "error": "Proposal not found"}
+    t["proposals"] = [p for p in t["proposals"] if p.get("id") != proposal_id]
+    if not accept:
+        _ledger(store, task_id, prop.get("proposed_for"),
+                prop.get("version"), prop.get("version"), "user", "proposal rejected")
+        _save_templates_store(store)
+        return {"ok": True, "status": "rejected"}
+    _save_templates_store(store)  # persist removal before revise reloads
+    # find which section holds the entity
+    for section in ("timeline", "challenges", "steps", "propositions"):
+        if any(e.get("id") == prop.get("proposed_for") for e in (t.get(section) or [])):
+            # temporarily lift user ownership so the accepted text lands,
+            # then re-mark: accepted proposal becomes user-confirmed content
+            res = revise_entity(task_id, section, prop["proposed_for"],
+                                prop.get("payload"), by="user",
+                                evidence_refs=prop.get("evidence_refs"),
+                                reason="proposal accepted")
+            return res
+    return {"ok": False, "error": "Entity not found"}
+
+
+def _ensure_template(task_id, membership):
+    store = _templates_store()
+    t = store["templates"].get(task_id)
+    if not t:
+        t = {"id": task_id, "name": membership.get("name", "Untitled"),
+             "session_ids": membership.get("session_ids", []),
+             "timeline": [], "challenges": [], "steps": [],
+             "propositions": [], "proposals": [], "critiques": []}
+        store["templates"][task_id] = t
+        _ledger(store, task_id, task_id, 0, 1, "system", "template created")
+        _save_templates_store(store)
+    return t
+
+
+# ---------------- N6 — Timeline Architect ----------------
+
+N6_PROMPT = (
+    "You build a task timeline from work-session logs. Return only JSON: "
+    "{\"phases\": [{\"name\": string, \"kind\": \"user_derived|ai_improvised\", "
+    "\"evidence\": string (which log lines ground this phase), \"states\": "
+    "[string]}]}. Map the user's own phase cues first (kind user_derived). "
+    "You MAY improvise further phases ONLY when grounded in the logs "
+    "(kind ai_improvised); never invent ungrounded phases.")
+
+N6_SCHEMA = ("name", "kind", "evidence", "states")
+
+
+def run_timeline_architect(cfg, task_ids=None):
+    """Build/revise per-task timelines (B1)."""
+    import ai
+    store = _templates_store()
+    memberships = store.get("memberships", [])
+    if task_ids is not None:
+        memberships = [m for m in memberships if m.get("task_id") in set(task_ids)]
+    reports = {r.get("session_id"): r for r in
+               _read_json("session_reports.json", {}).get("reports", [])}
+    out = {}
+    for m in memberships:
+        tid = m["task_id"]
+        _ensure_template(tid, m)
+        body = "\n\n".join(
+            ai._session_text(s) for s in _sessions_all()
+            if s.get("id") in set(m.get("session_ids", [])))[:6000]
+        if ai.MOCK or cfg.get("mock"):
+            data = {"phases": [
+                {"name": m.get("name", "Task") + ": Phase 1", "kind": "user_derived",
+                 "evidence": "mock", "states": ["start", "done"]},
+                {"name": m.get("name", "Task") + ": Phase 2 (improved)",
+                 "kind": "ai_improvised", "evidence": "mock notes",
+                 "states": ["start", "done"]}]}
+            ok, text = True, json.dumps(data)
+        else:
+            text, ok = ai._agent_chat(cfg, "task-builder",
+                                      N6_PROMPT + "\n\nTask: %s\n\nSessions:\n%s"
+                                      % (m.get("name"), body), {})
+        if not ok:
+            out[tid] = {"ok": False, "error": "no working model"}
+            continue
+        data = ai._extract_json(text)
+        phases = (data.get("phases") if isinstance(data, dict) else None) or []
+        if not phases or any(any(k not in p for k in N6_SCHEMA) for p in phases):
+            out[tid] = {"ok": False, "error": "invalid timeline JSON"}
+            continue
+        for i, p in enumerate(phases):
+            eid = "phase-%d" % (i + 1)
+            refs = [{"session_id": sid, "part_id": "*", "span": "all", "excerpt_hash": ""}
+                    for sid in m.get("session_ids", [])]
+            revise_entity(tid, "timeline", eid,
+                          {"name": p["name"], "states": p.get("states", []),
+                           "evidence": p.get("evidence", "")},
+                          by="agent", evidence_refs=refs,
+                          improvised=(p.get("kind") == "ai_improvised"),
+                          reason="timeline architect")
+            index_upsert("timeline:%s:%s" % (tid, eid), refs)
+        out[tid] = {"ok": True, "phases": len(phases)}
+    return {"ok": all(v.get("ok") for v in out.values()), "tasks": out}
+
+
+# ---------------- N7 — Challenge Miner ----------------
+
+N7_PROMPT = (
+    "You mine challenges from work-session logs for one task. Return only "
+    "JSON: {\"challenges\": [{\"text\": string, "
+    "\"severity\": \"low|medium|high|critical\", "
+    "\"status\": \"identified|solved|partially_solved\", "
+    "\"done\": [strings: what is finished], "
+    "\"remaining\": [strings: what is left — REQUIRED when partially_solved], "
+    "\"evidence\": string}]}.")
+
+SEVERITIES = ("low", "medium", "high", "critical")
+STATUSES = ("identified", "solved", "partially_solved")
+
+
+def run_challenge_miner(cfg, task_ids=None):
+    """Extract challenges with severity + status + done/remains (B2)."""
+    import ai
+    store = _templates_store()
+    memberships = store.get("memberships", [])
+    if task_ids is not None:
+        memberships = [m for m in memberships if m.get("task_id") in set(task_ids)]
+    out = {}
+    for m in memberships:
+        tid = m["task_id"]
+        _ensure_template(tid, m)
+        body = "\n\n".join(
+            ai._session_text(s) for s in _sessions_all()
+            if s.get("id") in set(m.get("session_ids", [])))[:6000]
+        if ai.MOCK or cfg.get("mock"):
+            data = {"challenges": [
+                {"text": "Mock challenge for %s" % m.get("name"),
+                 "severity": "medium", "status": "partially_solved",
+                 "done": ["investigated"], "remaining": ["fix", "verify"],
+                 "evidence": "mock"}]}
+            ok, text = True, json.dumps(data)
+        else:
+            text, ok = ai._agent_chat(cfg, "task-builder",
+                                      N7_PROMPT + "\n\nTask: %s\n\nSessions:\n%s"
+                                      % (m.get("name"), body), {})
+        if not ok:
+            out[tid] = {"ok": False, "error": "no working model"}
+            continue
+        data = ai._extract_json(text)
+        chs = (data.get("challenges") if isinstance(data, dict) else None) or []
+        valid = [c for c in chs
+                 if isinstance(c, dict) and c.get("text")
+                 and c.get("severity") in SEVERITIES
+                 and c.get("status") in STATUSES
+                 and (c.get("status") != "partially_solved" or c.get("remaining"))]
+        if not valid:
+            out[tid] = {"ok": False, "error": "invalid challenges JSON"}
+            continue
+        for i, c in enumerate(valid):
+            eid = "challenge-%d" % (i + 1)
+            refs = [{"session_id": sid, "part_id": "*", "span": "all", "excerpt_hash": ""}
+                    for sid in m.get("session_ids", [])]
+            v = verify("challenge", {"id": eid, "text": c["text"],
+                                     "severity": c["severity"], "status": c["status"]})
+            if not v.get("ok"):
+                continue
+            revise_entity(tid, "challenges", eid,
+                          {"text": c["text"], "severity": c["severity"],
+                           "status": c["status"], "done": c.get("done", []),
+                           "remaining": c.get("remaining", []),
+                           "evidence": c.get("evidence", ""), "step_refs": []},
+                          by="agent", evidence_refs=refs, reason="challenge miner")
+            index_upsert("challenge:%s:%s" % (tid, eid), refs)
+        out[tid] = {"ok": True, "challenges": len(valid)}
+    return {"ok": all(v.get("ok") for v in out.values()), "tasks": out}
+
+
+# ---------------- N8 — Step Linker ----------------
+
+N8_PROMPT = (
+    "You decompose task phases into steps linked to timelog parts (many-to-many: "
+    "one step may use parts from several sessions; one part may serve several "
+    "steps). Return only JSON: {\"steps\": [{\"goal\": string, "
+    "\"phase\": string (phase name it belongs to), "
+    "\"part_ids\": [string], \"challenge_ids\": [string]}]}. "
+    "Use ONLY the given part_ids and challenge_ids verbatim.")
+
+N8_SCHEMA = ("goal", "phase", "part_ids", "challenge_ids")
+
+
+def run_step_linker(cfg, task_ids=None):
+    """Build steps with part + challenge links (B3) + local constraint pass."""
+    import ai
+    store = _templates_store()
+    memberships = store.get("memberships", [])
+    if task_ids is not None:
+        memberships = [m for m in memberships if m.get("task_id") in set(task_ids)]
+    out = {}
+    for m in memberships:
+        tid = m["task_id"]
+        t = _ensure_template(tid, m)
+        parts = []
+        for s in _sessions_all():
+            if s.get("id") in set(m.get("session_ids", [])):
+                parts.extend(split_parts(s))
+        known_parts = {p["part_id"]: p for p in parts}
+        ch_ids = [c["id"] for c in t.get("challenges", [])]
+        ctx = "\n".join("part %s [%s]: %s" % (p["part_id"], p["kind"], p["text"][:200])
+                        for p in parts)[:5000]
+        if ai.MOCK or cfg.get("mock"):
+            half = max(1, len(parts) // 2)
+            data = {"steps": [
+                {"goal": "Mock step 1", "phase": "phase-1",
+                 "part_ids": [p["part_id"] for p in parts[:half]] or ["none"],
+                 "challenge_ids": ch_ids[:1]},
+                {"goal": "Mock step 2", "phase": "phase-2",
+                 "part_ids": [p["part_id"] for p in parts[half:]] or ["none"],
+                 "challenge_ids": ch_ids[1:2]}]}
+            ok, text = True, json.dumps(data)
+        else:
+            text, ok = ai._agent_chat(
+                cfg, "task-builder",
+                N8_PROMPT + "\n\nValid part_ids: %s\nValid challenge_ids: %s\n\nParts:\n%s"
+                % (sorted(known_parts), ch_ids, ctx), {})
+        if not ok:
+            out[tid] = {"ok": False, "error": "no working model"}
+            continue
+        data = ai._extract_json(text)
+        steps = (data.get("steps") if isinstance(data, dict) else None) or []
+        # local constraint pass: known part_ids only, known challenges only
+        clean = []
+        for s in steps:
+            if not isinstance(s, dict) or not s.get("goal"):
+                continue
+            pids = [p for p in (s.get("part_ids") or []) if p in known_parts]
+            cids = [c for c in (s.get("challenge_ids") or []) if c in ch_ids]
+            if not pids:
+                continue
+            clean.append({"goal": s["goal"], "phase": s.get("phase", ""),
+                          "part_ids": pids, "challenge_ids": cids})
+        if not clean:
+            out[tid] = {"ok": False, "error": "no valid steps"}
+            continue
+        backlinks = {}  # challenge_id -> [step_ids]
+        for i, s in enumerate(clean):
+            eid = "step-%d" % (i + 1)
+            refs = [{"session_id": known_parts[p]["session_id"], "part_id": p,
+                     "span": known_parts[p]["span"],
+                     "excerpt_hash": known_parts[p]["excerpt_hash"]}
+                    for p in s["part_ids"]]
+            v = verify("step", {"id": eid, "phase_state_id": s["phase"] or "phase-1",
+                                "goal": s["goal"], "part_ids": s["part_ids"],
+                                "challenge_ids": s["challenge_ids"]})
+            if not v.get("ok"):
+                continue
+            revise_entity(tid, "steps", eid,
+                          {"goal": s["goal"], "phase": s["phase"],
+                           "part_ids": s["part_ids"],
+                           "challenge_ids": s["challenge_ids"]},
+                          by="agent", evidence_refs=refs, reason="step linker")
+            index_upsert("step:%s:%s" % (tid, eid), refs)
+            for cid in s["challenge_ids"]:
+                backlinks.setdefault(cid, []).append(eid)
+        # back-links on a FRESH load (revise_entity saves per call; the
+        # in-memory `t` above is stale) — challenge.step_refs += steps
+        if backlinks:
+            fresh = _templates_store()
+            ft = (fresh.get("templates") or {}).get(tid) or {}
+            for cid, eids in backlinks.items():
+                ch = next((c for c in (ft.get("challenges") or [])
+                           if c.get("id") == cid), None)
+                if ch:
+                    have = set(ch.get("payload", {}).get("step_refs") or [])
+                    ch["payload"].setdefault("step_refs", []).extend(
+                        [e for e in eids if e not in have])
+            _save_templates_store(fresh)
+        out[tid] = {"ok": True, "steps": len(clean)}
+    return {"ok": all(v.get("ok") for v in out.values()), "tasks": out}
+
+
+# ---------------- N10/N11 — Proposer + Critic ----------------
+
+N10_PROMPT = (
+    "You propose observations for ONE work step, ONLY when confidently grounded "
+    "in the excerpts. Kinds: thinking_issue | mind_obscuration | domain_help. "
+    "Abstain (empty array) over guessing. Return only JSON: {\"propositions\": "
+    "[{\"text\": string, \"kind\": string, \"confidence\": \"high|medium\", "
+    "\"grounding\": string (exact excerpt supporting it)}]}.")
+
+
+def critic_filter(propositions, excerpts):
+    """N11 mechanical gate (always on, LLM critic adds judgment in live mode):
+    keep propositions whose grounding text actually appears in the excerpts."""
+    blob = "\n".join(excerpts)
+    kept, rejected = [], []
+    for p in propositions:
+        g = (p.get("grounding") or "").strip()
+        if p.get("confidence") == "high" and g and g[:60] in blob:
+            kept.append(p)
+        else:
+            rejected.append(p)
+    return kept, rejected
+
+
+def run_propositions(cfg, task_ids=None):
+    """N10 propose + N11 gate per step (B4)."""
+    import ai
+    store = _templates_store()
+    memberships = store.get("memberships", [])
+    if task_ids is not None:
+        memberships = [m for m in memberships if m.get("task_id") in set(task_ids)]
+    out = {}
+    for m in memberships:
+        tid = m["task_id"]
+        t = _ensure_template(tid, m)
+        parts_by_id = {}
+        for s in _sessions_all():
+            if s.get("id") in set(m.get("session_ids", [])):
+                for p in split_parts(s):
+                    parts_by_id[p["part_id"]] = p
+        n_prop = 0
+        for st in (t.get("steps") or []):
+            sid = st["id"]
+            excerpts = [parts_by_id[p]["text"] for p in
+                        (st.get("payload", {}).get("part_ids") or []) if p in parts_by_id]
+            if ai.MOCK or cfg.get("mock"):
+                g = (excerpts[0][:60] if excerpts else "mock")
+                data = {"propositions": [
+                    {"text": "Mock proposition for %s" % sid, "kind": "domain_help",
+                     "confidence": "high", "grounding": g}]}
+                ok, text = True, json.dumps(data)
+            else:
+                text, ok = ai._agent_chat(
+                    cfg, "task-builder",
+                    N10_PROMPT + "\n\nStep goal: %s\n\nExcerpts:\n%s"
+                    % (st.get("payload", {}).get("goal"), "\n---\n".join(excerpts)[:4000]),
+                    {})
+            if not ok:
+                continue
+            data = ai._extract_json(text)
+            props = (data.get("propositions") if isinstance(data, dict) else None) or []
+            kept, rejected = critic_filter(props, excerpts)
+            for p in kept:
+                eid = "prop-" + hashlib.sha1(
+                    (p.get("text", "") + sid).encode("utf-8")).hexdigest()[:8]
+                v = verify("proposition", {"id": eid, "step_id": sid,
+                                           "text": p.get("text"),
+                                           "confidence": p.get("confidence")})
+                if not v.get("ok"):
+                    continue
+                refs = [{"session_id": parts_by_id[pid]["session_id"], "part_id": pid,
+                         "span": parts_by_id[pid]["span"],
+                         "excerpt_hash": parts_by_id[pid]["excerpt_hash"]}
+                        for pid in (st.get("payload", {}).get("part_ids") or [])
+                        if pid in parts_by_id]
+                revise_entity(tid, "propositions", eid,
+                              {"text": p["text"], "kind": p.get("kind"),
+                               "confidence": p.get("confidence"),
+                               "grounding": p.get("grounding"),
+                               "accepted": None, "step_id": sid},
+                              by="agent", evidence_refs=refs,
+                              reason="proposition proposer")
+                n_prop += 1
+            t["critiques"].append({"step": sid, "kept": len(kept),
+                                  "rejected": len(rejected), "ts": _now()})
+        _save_templates_store(_templates_store())
+        out[tid] = {"ok": True, "propositions": n_prop}
+    return {"ok": all(v.get("ok") for v in out.values()), "tasks": out}
+
+
+def toggle_proposition_v2(task_id, prop_id, accepted):
+    """Check a proposition IN/OUT (B4). Records decision + frozen context for DPO."""
+    store = _templates_store()
+    t = store.get("templates", {}).get(task_id)
+    if not t:
+        return {"ok": False, "error": "Task not found"}
+    prop = next((e for e in (t.get("propositions") or []) if e.get("id") == prop_id), None)
+    if not prop:
+        return {"ok": False, "error": "Proposition not found"}
+    prop["payload"]["accepted"] = bool(accepted)
+    prop["payload"]["decided_at"] = _now()
+    _ledger(store, task_id, prop_id, prop.get("version"), prop.get("version"),
+            "user", "proposition %s" % ("IN" if accepted else "OUT"))
+    _save_templates_store(store)
+    return {"ok": True}
+
+
+# ---------------- N13 — DPO Row Builder ----------------
+
+def export_dpo_rows_v2():
+    """Consent-gated DPO export with FULL flow trajectory (locked decision).
+
+    Each row: context (task/phase/step/proposition/critique/excerpts),
+    chosen/rejected pair, trajectory[node, input_ref, output_ref, version],
+    frozen at decision time. Append-only file; never mutated.
+    """
+    import ai
+    cfg = ai.load_config()
+    if not cfg.get("consent_dpo"):
+        return {"ok": False, "error": "consent not given"}
+    store = _templates_store()
+    rows = []
+    for tid, t in (store.get("templates") or {}).items():
+        revs = [r for r in (store.get("revisions") or []) if r.get("task_id") == tid]
+        for prop in (t.get("propositions") or []):
+            p = prop.get("payload") or {}
+            if p.get("accepted") is None:
+                continue
+            traj = [{"node": r.get("entity"), "by": r.get("by"),
+                     "from_v": r.get("from_v"), "to_v": r.get("to_v"),
+                     "ts": r.get("ts"), "reason": r.get("reason")} for r in revs]
+            step = next((s for s in (t.get("steps") or [])
+                         if s.get("id") == p.get("step_id")), {})
+            rows.append({
+                "context": {
+                    "task_id": tid, "task_name": t.get("name"),
+                    "step_id": p.get("step_id"),
+                    "step_goal": (step.get("payload") or {}).get("goal"),
+                    "proposition": p.get("text"),
+                    "kind": p.get("kind"), "confidence": p.get("confidence"),
+                    "grounding": p.get("grounding"),
+                    "evidence_refs": prop.get("evidence_refs", []),
+                    "critiques": t.get("critiques", [])},
+                "chosen": p["text"] if p["accepted"] else "NO_PROPOSITION",
+                "rejected": "NO_PROPOSITION" if p["accepted"] else p["text"],
+                "trajectory": traj,
+                "decision": "in" if p["accepted"] else "out",
+                "decided_at": p.get("decided_at")})
+    path = _app_dir() / "dpo_rows.jsonl"
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    except OSError as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "count": len(rows), "path": str(path)}
+
+
+# ---------------- P2 pipeline convenience ----------------
+
+def run_task_graph(cfg, task_ids=None):
+    """N6 -> N7 -> N8 -> N10/N11 staged mini-DAG (N12 governs revisions)."""
+    r6 = run_timeline_architect(cfg, task_ids)
+    r7 = run_challenge_miner(cfg, task_ids)
+    r8 = run_step_linker(cfg, task_ids)
+    r10 = run_propositions(cfg, task_ids)
+    log_run({"kind": "run_done", "trigger": "manual", "job": "task-graph",
+             "timeline": r6, "challenges": r7, "steps": r8,
+             "propositions": r10})
+    ok = all(r.get("ok") for r in (r6, r7, r8, r10))
+    return {"ok": ok, "timeline": r6, "challenges": r7, "steps": r8,
+            "propositions": r10}
