@@ -11,7 +11,11 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_FILE = BASE_DIR / "sessions.json"
+try:
+    from store import data_file as _resolve_data_file
+    DATA_FILE = _resolve_data_file()
+except ImportError:
+    DATA_FILE = BASE_DIR / "sessions.json"
 FMT = "%Y-%m-%dT%H:%M:%S"
 FMT_SHORT = "%Y-%m-%dT%H:%M"
 
@@ -24,7 +28,11 @@ DURATION_BUCKETS = ("0-15", "15-30", "30-60", "60-120", "120-240", "240+")
 
 
 def load_sessions():
-    """Load sessions.json as a list of session dicts; empty list on any failure."""
+    """Load sessions.json as a list of session dicts; empty list on any failure.
+
+    Reads the DATA_FILE attribute (overridable in tests). It resolves via
+    store.data_file() at import, so OTL_APP_DIR must be set before import.
+    """
     try:
         raw = json.loads(DATA_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -39,14 +47,8 @@ def load_sessions():
 
 def _parse_time(value):
     """Parse a local 'YYYY-MM-DDTHH:MM:SS' (or short) timestamp into a datetime."""
-    if not isinstance(value, str):
-        return None
-    for fmt in (FMT, FMT_SHORT):
-        try:
-            return datetime.strptime(value, fmt)
-        except ValueError:
-            pass
-    return None
+    from timelib import parse_time
+    return parse_time(value)
 
 
 def _classify(sessions):

@@ -100,6 +100,7 @@ def m_gui_boot(timeout_s=45):
     tmp = tempfile.mkdtemp(prefix="otl-guiboot-")
     for fn in ("session_logger.py", "ui.py", "brand.py", "ai.py", "aigraph.py",
                "analytics.py", "models.py", "keystore.py", "audio_capture.py",
+               "timelib.py", "store.py", "export_xlsx.py",
                "asr_allowlist.json", "app.ico"):
         src = os.path.join(ROOT, fn)
         if os.path.exists(src):

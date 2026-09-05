@@ -686,14 +686,8 @@ def fallback_model(agent_id, selected_provider, selected_key_id, selected_model)
 
 
 def _parse_dt(v):
-    if not isinstance(v, str):
-        return None
-    for f in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
-        try:
-            return datetime.strptime(v, f)
-        except ValueError:
-            continue
-    return None
+    from timelib import parse_time
+    return parse_time(v)
 
 
 def _session_text(s):

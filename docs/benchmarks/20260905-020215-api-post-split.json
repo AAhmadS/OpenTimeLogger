@@ -1,0 +1,12 @@
+{
+  "mode": "api",
+  "at": "2026-09-05T02:02:13",
+  "python": "3.12.3",
+  "result": {
+    "init_ms": 0,
+    "get_state_ms": 0,
+    "dashboard_30d_ms": 1,
+    "sessions": 0,
+    "dashboard_sessions": 0
+  }
+}

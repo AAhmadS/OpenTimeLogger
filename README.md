@@ -88,11 +88,17 @@ temp dirs. Unused webview backends are excluded in the spec to keep it lean.)
 ## Project structure
 
 ```
-OpenTimeLogger/
-├── session_logger.py    # backend: JSON store, session logic, Excel export, AI bridge, webview host
+Interval/
+├── session_logger.py    # backend: session logic, Excel export, AI bridge, webview host
 ├── ui.py                # the entire UI (HTML/CSS/JS) embedded as a string
+├── store.py             # paths (OTL_APP_DIR-aware), JSON store, traversal guard, logging
+├── timelib.py           # timestamp parsing/formatting/durations (single home)
+├── export_xlsx.py       # 4-sheet workbook builder, filters, export naming
 ├── analytics.py         # stdlib-only dashboard aggregations over sessions.json
 ├── ai.py                # BYOK providers, agent pipeline, tasks/insights store, ASR, fallback
+├── aigraph.py           # agent graph: change detection, parts, tasks, coach, scheduler
+├── models.py            # live provider catalog, 4D pricing, cost estimator
+├── keystore.py          # OS credential-locker backend (ctypes, stdlib-only)
 ├── audio_capture.py     # microphone capture (sounddevice) for dictation
 ├── brand.py             # generated avatar, embedded as a data URI
 ├── app.ico              # application icon (Seedream 5 logo, multi-size)
