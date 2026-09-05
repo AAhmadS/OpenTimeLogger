@@ -53,13 +53,17 @@ def m_dist_size():
         for dp, _, fns in os.walk(p):
             for fn in fns:
                 fp = os.path.join(dp, fn)
-                total += os.path.getsize(fp)
-                files.append(os.path.relpath(fp, ROOT))
+                sz = os.path.getsize(fp)
+                total += sz
+                files.append((os.path.relpath(fp, ROOT), sz))
     for fn in os.listdir(ROOT):
         if fn.lower().endswith(".exe"):
-            total += os.path.getsize(os.path.join(ROOT, fn))
-            files.append(fn)
-    return {"bytes": total, "mb": round(total / 1e6, 1), "entries": len(files), "files": files}
+            sz = os.path.getsize(os.path.join(ROOT, fn))
+            total += sz
+            files.append((fn, sz))
+    big = sorted(files, key=lambda f: f[1], reverse=True)[:20]
+    return {"bytes": total, "mb": round(total / 1e6, 1), "entries": len(files),
+            "largest": [{"file": f, "kb": round(s / 1024, 1)} for f, s in big]}
 
 
 def m_import(reps=3):

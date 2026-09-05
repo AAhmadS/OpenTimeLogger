@@ -45,6 +45,23 @@ def test_legacy_active_migration_preserves_fields(tmp_path, monkeypatch):
         "abc", "Coding", "app", "x", "did things", "n", 42)
 
 
+def test_single_instance_lock(tmp_path, monkeypatch):
+    import sys
+    if sys.platform != "win32":
+        pytest.skip("Windows locker semantics")
+    monkeypatch.setenv("OTL_APP_DIR", str(tmp_path))
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    import msvcrt
+    # simulate a running instance holding the lock byte
+    fh = open(tmp_path / "instance.lock", "a+b")
+    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+    try:
+        assert store.single_instance() is False
+    finally:
+        fh.close()
+    assert store.single_instance() is True
+
+
 def test_resolve_inside_blocks_traversal(tmp_path):
     base = tmp_path / "exports"
     base.mkdir()

@@ -20,7 +20,8 @@ a = Analysis(
         'IPython', 'jedi', 'pytest', 'setuptools',
     ],
     noarchive=False,
-    optimize=2,
+    optimize=1,  # NOT 2: level 2 strips docstrings, which breaks pycparser
+                 # (needed by clr_loader/pythonnet) in frozen boots.
 )
 pyz = PYZ(a.pure)
 

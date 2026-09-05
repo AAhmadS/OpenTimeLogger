@@ -65,7 +65,7 @@ pythonw session_logger.py     # or: python session_logger.py
 ### Building the standalone `.exe`
 
 ```bash
-pip install pyinstaller
+pip install pyinstaller pyinstaller-hooks-contrib
 pyinstaller --noconfirm --clean OpenTimeLogger.spec
 ```
 

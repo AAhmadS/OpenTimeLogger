@@ -63,6 +63,36 @@ def resolve_inside(base_dir, user_path):
 
 
 _log = None
+_lock_fh = None
+
+
+def single_instance():
+    """Process-scoped single-instance guard (no stale locks: the OS drops
+    the lock when the holder dies).
+
+    Returns True when this process owns the instance. A second copy must
+    exit quietly — concurrent frozen boots race CLR init and crash.
+    """
+    global _lock_fh
+    try:
+        app_dir().mkdir(parents=True, exist_ok=True)
+        p = app_dir() / "instance.lock"
+        _lock_fh = open(p, "a+b")
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(_lock_fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except (OSError, IOError):
+        try:
+            if _lock_fh:
+                _lock_fh.close()
+        except Exception:
+            pass
+        _lock_fh = None
+        return False
 
 
 def get_logger(name="interval"):

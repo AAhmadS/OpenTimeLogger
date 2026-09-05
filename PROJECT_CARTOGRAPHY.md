@@ -327,6 +327,21 @@ Reads logs and proposes:
   `keystore.py`). Frozen §1 body left untouched per the provenance rule.
 - Open Design project + token specimen retitled to Interval.
 
+### B.8 Build outcomes (2026-09-05, measured)
+  32.6 MB single exe — deleted). Cold start to visible window ~1.3–9 s
+  (first-run WebView2 profile creation is the slow end); main process peak
+  ~50–113 MB + ~130 MB WebView2 renderer child. RAM is WebView2-dominated
+  either way — onedir wins startup (no TEMP extraction), not memory.
+- Frozen-boot saga (all in-build, all fixed): (1) exit-1 from
+  `optimize=2` stripping docstrings → pycparser can't build → clr_loader →
+  pythonnet CLR init fails: spec now `optimize=1`. (2) Concurrent frozen
+  boots race CLR init and crash: `store.single_instance()` lockfile guard,
+  second copy exits 0 quietly (verified on the built exe). (3) Excluding
+  winforms breaks pywebview import — don't. edgechromium-first with
+  winforms fallback kept.
+- Prune candidates for later: PIL `_avif` codec (7.7 MB, openpyxl doesn't
+  need it), `pywebview-android.jar`, non-win portaudio binaries.
+  Build deps: pyinstaller + pyinstaller-hooks-contrib (README).
 ### B.7 Open Design strict flow outcomes (2026-09-05, fully automated)
 - Project `opentimelogger-redesign` ("Interval Redesign — strict surfaces"):
   token-specimen.html, dashboard.html (v2), ai-workspace.html,
