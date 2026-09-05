@@ -306,3 +306,12 @@ Reads logs and proposes:
   the earlier explicit mimo order); `docs-keeper` → `opencode-go/deepseek-v4-flash`.
 - If the provider publishes the exact requested IDs later, it is a one-line
   `model:` change per file.
+
+### B.5 Known issues for the repair phase (found 2026-09-05, not yet fixed)
+- `session_logger.py` ignores `OTL_APP_DIR` (only `ai.py` honors it): Store,
+  DATA_FILE and exports always resolve to the repo/exe dir. Preview harness
+  served real `sessions.json` because of this. Owner: `backend-hardener`
+  (unify on one `app_dir()` in `timelib`/`store` split).
+- `ui.py` is a non-raw Python string: JS `\n` escapes silently become real
+  newlines at import (broke the AI tab at runtime once, caught by preview).
+  Owner: `ui-architect` (the `web/` split eliminates the hazard class).

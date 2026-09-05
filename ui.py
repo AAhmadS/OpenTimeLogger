@@ -1007,13 +1007,21 @@ async function aiBootstrap(){
   const st=await A("ai_pipeline_status");
   if(st&&!st.error){S.ai.pipeline.st=st;S.ai.pipeline.running=!!st.running;}
   if(st&&st.running)setInterval(pollPipeline,900);
+  A("ai_tick");
+  setInterval(()=>{A("ai_tick");},60000);
   await aiRefresh();
 }
 async function aiRefresh(){
-  const [tasks,reports,insights]=await Promise.all([A("ai_get_tasks"),A("ai_get_reports"),A("ai_get_insights")]);
+  const [tasks,reports,insights,coach,spend,estimate,graph]=await Promise.all([
+    A("ai_get_tasks"),A("ai_get_reports"),A("ai_get_insights"),
+    A("ai_get_coach"),A("ai_spend_summary"),A("ai_estimate_cost"),A("ai_graph_status")]);
   if(tasks&&!tasks.error)S.ai.tasks=tasks.tasks||[];
   if(reports&&!reports.error)S.ai.reports=reports.reports||[];
   if(insights&&!insights.error)S.ai.insights=insights.insights;
+  if(coach&&!coach.error)S.ai.coach=coach.coach;
+  if(spend&&!spend.error)S.ai.spend=spend;
+  if(estimate&&!estimate.error)S.ai.estimate=estimate;
+  if(graph&&!graph.error)S.ai.graph=graph;
 }
 function aiHtml(){
   if(!S.ai.ready)return `<div class="cards"><div class="card glass fade" style="text-align:center"><span class="spinner"></span> <span style="margin-left:8px">Loading AI workspace…</span></div></div>`;
@@ -1125,6 +1133,7 @@ function aiPipelineHtml(hasTasks,hasInsights){
   return `<div class="card glass fade">
     <div class="card-h">${I("route",15)}<div class="card-t">Agent pipeline</div></div>
     <p class="card-sub">Runs: Session Analyzer → Task Builder → Coach. Each agent uses its configured model; edges animate while running.</p>
+    ${aiCostHtml()}
     ${aiGraphHtml({done:hasTasks?["session-analyzer","task-builder"]:[],run:S.ai.pipeline.running?S.ai.pipeline.st:null})}
     ${fails.length?`<div class="insight" style="border-color:rgba(248,113,113,.4)">
       <div class="in-t">${I("alert",13)} ${fails.length} agent(s) failed</div>
@@ -1209,6 +1218,34 @@ function aiTaskDetailHtml(t){
     </div>
   </div>`;
 }
+function mdHtml(md){
+  return esc(md||"").split("\\n").map(ln=>{
+    if(/^###\s+/.test(ln))return `<div class="in-t" style="margin-top:10px">${ln.replace(/^###\s+/,"")}</div>`;
+    if(/^##\s+/.test(ln))return `<div class="card-t" style="font-size:13.5px;margin:12px 0 4px">${ln.replace(/^##\s+/,"")}</div>`;
+    if(/^-\s+/.test(ln))return `<div class="in-s" style="padding-left:14px">• ${ln.replace(/^-\s+/,"")}</div>`;
+    if(!ln.trim())return "";
+    return `<div class="in-s">${ln}</div>`;
+  }).join("");
+}
+function aiDeepCoachHtml(){
+  const c=S.ai.coach;
+  const g=S.ai.graph||{};
+  if(!c)return `<div class="insight"><div class="in-t">${I("activity",13)} Deep analysis</div>
+    <div class="in-s">Evidence-backed coach: pattern DB, confounder-checked findings, time division. ${g.memberships?g.memberships+" task group(s) mapped — run it to analyze your history.":"Run it once to analyze your full history."}</div>
+    <div class="row" style="margin-top:8px"><button class="btn primary small" id="runDeep">Run deep analysis</button></div></div>`;
+  return `<div class="insight"><div class="in-t">${I("activity",13)} Deep analysis <span style="color:var(--faint);font-weight:400">· ${esc((c.generated_at||"").slice(0,16).replace("T"," "))} · ${c.claims||0} verified claim(s)</span></div>
+    ${mdHtml(c.body)}
+    <div class="row" style="margin-top:8px"><button class="btn ghost small" id="runDeep">Re-run deep analysis</button></div></div>`;
+}
+function aiCostHtml(){
+  const sp=S.ai.spend,es=S.ai.estimate;
+  if(!sp&&!es)return "";
+  const parts=[];
+  if(sp&&sp.total_usd_est!=null)parts.push("~$"+sp.total_usd_est+" spent ("+esc(sp.basis||"metered est.")+")");
+  if(es&&es.usd_low!=null)parts.push("full-history analysis ≈ $"+es.usd_low+"–$"+es.usd_high+" ("+esc(es.basis||"estimate")+")");
+  if(!parts.length)return "";
+  return `<div class="in-s" style="margin:8px 0 0">${parts.join(" · ")}</div>`;
+}
 function aiCoachHtml(){
   const ins=S.ai.insights;
   const ideal=(S.ai.cfg&&S.ai.cfg.ideal_time)||{};
@@ -1216,6 +1253,7 @@ function aiCoachHtml(){
   return `<div class="card glass fade">
     <div class="card-h">${I("brain",15)}<div class="card-t">Work coach</div></div>
     <p class="card-sub">Independent read of your logs: logging style, timing patterns, time division, exhaustion signals. Regenerate any time.</p>
+    ${aiDeepCoachHtml()}
     ${ideal&&!ideal.set?`<div class="insight" style="border-color:rgba(251,191,36,.35)">
       <div class="in-t">${I("info",13)} Tell me your ideal hours</div>
       <div class="in-s">Set your ideal time-of-day / days in Settings so pattern analysis can compare against your target, not just the average.</div>
@@ -1272,6 +1310,13 @@ function bindAi(){
     runC.disabled=false;
     if(r&&!r.error){await aiRefresh();renderMain();toast("Insights regenerated.");}
     else toast((r&&r.error)||"Coach failed","err");
+  });
+  const runD=document.getElementById("runDeep");if(runD)runD.addEventListener("click",async()=>{
+    runD.disabled=true;runD.innerHTML=`<span class="spinner"></span> Analyzing…`;
+    const r=await A("ai_coach_refresh");
+    runD.disabled=false;
+    if(r&&!r.error){await aiRefresh();renderMain();toast("Deep analysis ready.");}
+    else toast((r&&r.error)||"Deep analysis failed","err");
   });
   const reset=document.getElementById("onbReset");if(reset)reset.addEventListener("click",()=>{S.ai.onb={idx:0,provider:null,keyId:null,model:null,models:[],loading:false,testing:false,tested:false,custom:""};renderMain();});
   const taskBack=document.getElementById("taskBack");if(taskBack)taskBack.addEventListener("click",()=>{S.ai.taskSel=null;S.ai.stepSel=null;renderMain();});
@@ -1339,9 +1384,13 @@ async function loadOnbModels(){
   const onb=S.ai.onb;
   if(!onb.provider)return toast("Pick a provider first","err");
   onb.loading=true;renderMain();
+  if(onb.keyId){
+    const rs=await A("ai_refresh_models",onb.provider,onb.keyId);
+    if(rs&&rs.ok)onb.models=(rs.models||[]).map(m=>m.id||m);
+  }
   const r=await A("ai_list_models",onb.provider,"chat");
   onb.loading=false;
-  if(r&&!r.error){onb.models=r.models||[];if(!onb.models.length&&r.note)toast(r.note,"err");}
+  if(r&&!r.error){onb.models=r.models||[];if(!onb.models.length&&r.note)toast(r.note,"err");else if(r.source!=="live"&&r.note)toast(r.note);}
   else toast((r&&r.error)||"Could not list models","err");
   renderMain();
 }
@@ -1391,7 +1440,8 @@ function openSettings(section){
   const cfg=S.ai.cfg||{};
   const ideal=cfg.ideal_time||{days:[1,2,3,4,5],start:"08:00",end:"18:00",set:false};
   const keys=cfg.keys||{};
-  const asr=cfg.asr||{};
+  const asr=Object.assign({},cfg.asr||{});
+  if(section==="asr"&&S.ai._asrProv)asr.provider=S.ai._asrProv;
   const days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const body=`
     <div class="chips" style="margin-bottom:12px">
@@ -1421,7 +1471,7 @@ function generalBody(cfg){
   }).join("")}</div>
   <div class="chart-note" style="margin:10px 0 6px">THEME</div>
   <div class="chips"><button class="chip ${theme==="dark"?"active":""}" id="thDark">Dark</button><button class="chip ${theme==="light"?"active":""}" id="thLight">Light</button></div>
-  <p class="muted small" style="margin-top:10px">App data lives next to the executable: sessions.json, ai_config.json (keys stored locally, plaintext on your disk), tasks.json, insights.json, dpo_dataset.jsonl.</p>`;
+  <p class="muted small" style="margin-top:10px">App data lives next to the executable: sessions.json, ai_config.json (keys in this machine's OS credential locker, never in files), tasks.json, insights.json, dpo_dataset.jsonl.</p>`;
 }
 function idealBody(ideal){
   return `<p class="card-sub" style="margin-top:0">The coach compares your real activity against this target when you set it.</p>
@@ -1435,7 +1485,7 @@ function idealBody(ideal){
 function asrBody(cfg,keys,asr){
   const providers=S.ai.providers.filter(p=>(p.capabilities||[]).indexOf("asr")>=0);
   const allKeys=Object.values(keys);
-  return `<p class="card-sub" style="margin-top:0">Dictate descriptions &amp; notes instead of typing. English only. Only models under 4% WER (per artificialanalysis.ai speech-to-text leaderboard) are selectable: whisper-1, gpt-4o-transcribe.</p>
+  return `<p class="card-sub" style="margin-top:0">Dictate descriptions &amp; notes instead of typing. English only. Only leaderboard-verified models under 4% WER are selectable — suspended entries show why (evidence: docs/asr-evidence).</p>
   <label style="margin-bottom:10px">Provider
     <div class="chips" style="margin-top:6px">${providers.map(p=>`<button class="chip ${asr.provider===p.id?"active":""}" data-p="${p.id}">${esc(p.label)}</button>`).join("")||"<span style='font-size:12px;color:var(--faint)'>No ASR-capable provider yet (OpenAI / AvalAI).</span>"}</div>
   </label>
@@ -1443,7 +1493,8 @@ function asrBody(cfg,keys,asr){
     <select class="input" id="asrKey">${allKeys.filter(k=>k.provider===asr.provider).map(k=>`<option value="${esc(k.id)}" ${asr.key_id===k.id?"selected":""}>${esc(k.label||k.id)}</option>`).join("")}</select>
   </label>
   <label>Model
-    <select class="input" id="asrModel">${providers.find(p=>p.id===asr.provider)?(providers.find(p=>p.id===asr.provider).asr_models||[]).map(m=>`<option value="${esc(m)}" ${asr.model===m?"selected":""}>${esc(m)}</option>`).join(""):""}</select>
+    <select class="input" id="asrModel"><option value="">Loading verified list…</option></select>
+    <div class="in-s" id="asrNote" style="margin-top:6px"></div>
   </label>
   <div class="row"><button class="btn primary" id="asrSave">Save dictation config</button></div>`;
 }
@@ -1477,13 +1528,30 @@ function bindSecBody(section){
     });
   }
   if(section==="asr"){
-    document.querySelectorAll("#modalOv .chip[data-p]").forEach(c=>c.addEventListener("click",()=>openSettings("asr")));
+    document.querySelectorAll("#modalOv .chip[data-p]").forEach(c=>c.addEventListener("click",()=>{S.ai._asrProv=c.dataset.p;openSettings("asr");}));
+    (async()=>{
+      const cfg0=S.ai.cfg||{};const asr0=cfg0.asr||{};
+      const chipProv=(document.querySelector("#modalOv .chip[data-p].active")||{}).dataset;
+      const prov=asr0.provider||(chipProv?chipProv.p:"");
+      const sel=document.getElementById("asrModel"),note=document.getElementById("asrNote");
+      if(!sel)return;
+      const [lm,al]=await Promise.all([
+        prov?A("ai_list_models",prov,"asr"):null,
+        A("ai_asr_allowlist")]);
+      let opts="";
+      if(lm&&!lm.error&&(lm.models||[]).length)
+        opts+=(lm.models||[]).map(m=>`<option value="${esc(m)}" ${asr0.model===m?"selected":""}>${esc(m)} (verified)</option>`).join("");
+      const susp=((al&&al.entries)||[]).filter(e=>(e.providers||[]).indexOf(prov)>=0&&e.status!=="verified");
+      opts+=susp.map(e=>`<option disabled title="${esc(e.reason||e.status)}">${esc(e.benchmark_row||e.api_id||"?")} — ${esc(e.status)}${e.wer_percent!=null?(" · "+e.wer_percent+"% WER"):""}</option>`).join("");
+      sel.innerHTML=opts||`<option value="">No verified models for this provider</option>`;
+      if(note)note.textContent=(lm&&lm.note)||(al&&al.snapshot_date?("Leaderboard snapshot "+al.snapshot_date+"."):"");
+    })();
     const sv=document.getElementById("asrSave");
     if(sv)sv.addEventListener("click",async()=>{
       const cfg=S.ai.cfg||{};
       cfg.asr={provider:(document.querySelector("#modalOv .chip[data-p].active")||{}).dataset?document.querySelector("#modalOv .chip[data-p].active").dataset.p:"",key_id:$("#asrKey").value,model:$("#asrModel").value};
       const r=await A("ai_save_config",cfg);
-      if(r&&!r.error){S.ai.cfg=cfg;closeModal();toast("Dictation config saved.");}
+      if(r&&!r.error){S.ai.cfg=cfg;S.ai._asrProv=null;closeModal();toast("Dictation config saved.");}
       else toast((r&&r.error)||"Save failed","err");
     });
   }
@@ -1514,7 +1582,8 @@ function agentPickerModal(agentId){
     </label>
     <label style="margin-bottom:10px">Key<select class="input" id="apKey">${keys.map(k=>`<option value="${esc(k.id)}" ${cur.key_id===k.id?"selected":""}>${esc(k.label||k.id)}</option>`).join("")}</select></label>
     <label>Model<input id="apModel" class="input" value="${esc(cur.model||"")}" placeholder="${esc((meta&&meta.chat_models||[]).join(", "))}"></label>
-    <div class="row"><button class="btn primary" id="apSave">Save agent LLM</button><button class="btn ghost" id="apTest">${I("zap",12)} Test</button><span id="apRes" style="font-size:12px;color:var(--muted)"></span></div>`;
+    <div class="in-s" id="apLive" style="margin-top:4px"></div>
+    <div class="row"><button class="btn primary" id="apSave">Save agent LLM</button><button class="btn ghost" id="apTest">${I("zap",12)} Test</button><button class="btn ghost" id="apScan">Re-scan</button><span id="apRes" style="font-size:12px;color:var(--muted)"></span></div>`;
   openModal("Change agent model",body,`<button class="btn ghost" id="modClose2">Close</button>`);
   $("#modClose2").addEventListener("click",closeModal);
   document.querySelectorAll("#modalOv .chip[data-ap]").forEach(c=>c.addEventListener("click",()=>agentPickerModal(agentId)));
@@ -1534,6 +1603,27 @@ function agentPickerModal(agentId){
     const res=document.getElementById("apRes");
     if(r&&r.ok)res.innerHTML=`<span style="color:var(--accent)">OK · ${r.latency_ms} ms</span>`;
     else res.innerHTML=`<span style="color:var(--danger)">${esc(r&&r.error||"failed")}</span>`;
+  });
+  const lv=document.getElementById("apLive");
+  async function apLiveList(){
+    const prov=document.querySelector("#modalOv .chip[data-ap].active").dataset.ap;
+    const r=await A("ai_list_models",prov,"chat");
+    const inp=document.getElementById("apModel");
+    if(r&&!r.error&&inp){
+      if((r.models||[]).length)inp.placeholder=(r.models||[]).join(", ");
+      if(lv)lv.textContent=(r.source==="live"?"Live catalog"+(r.fetched_at?(" · "+r.fetched_at.slice(0,16).replace("T"," ")):""):((r.note||"Seed catalog")+" — Re-scan for live data"));
+    }
+  }
+  apLiveList();
+  const sc=document.getElementById("apScan");
+  if(sc)sc.addEventListener("click",async()=>{
+    sc.disabled=true;sc.innerHTML=`<span class="spinner"></span>`;
+    const prov=document.querySelector("#modalOv .chip[data-ap].active").dataset.ap;
+    const r=await A("ai_refresh_models",prov,$("#apKey").value);
+    sc.disabled=false;sc.innerHTML=`Re-scan`;
+    const res=document.getElementById("apRes");
+    if(r&&r.ok){res.innerHTML=`<span style="color:var(--accent)">Live catalog updated.</span>`;apLiveList();}
+    else res.innerHTML=`<span style="color:var(--danger)">${esc(r&&r.error||"scan failed — seed list kept")}</span>`;
   });
 }
 function openAiSettings(){openSettings("general");}
