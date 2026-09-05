@@ -315,3 +315,10 @@ Reads logs and proposes:
 - `ui.py` is a non-raw Python string: JS `\n` escapes silently become real
   newlines at import (broke the AI tab at runtime once, caught by preview).
   Owner: `ui-architect` (the `web/` split eliminates the hazard class).
+
+### B.6 Product name correction (2026-09-05, user ruling)
+- The app's name is **Interval**. "OpenTimeLogger" remains the repo / code /
+  file identity (spec, exe, module docstrings updated cosmetically) and the
+  frozen keystore service string (renaming orphans stored keys — see
+  `keystore.py`). Frozen §1 body left untouched per the provenance rule.
+- Open Design project + token specimen retitled to Interval.

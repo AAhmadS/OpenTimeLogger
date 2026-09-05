@@ -1,4 +1,4 @@
-﻿"""BYOK AI layer for OpenTimeLogger: provider catalog, key config, chat completions,
+﻿"""BYOK AI layer for Interval: provider catalog, key config, chat completions,
 model tests, fallback selection, the agent pipeline (session analyzer -> task builder ->
 coach), task storage with propositions, DPO export and audio transcription.
 Standard library only. The app dir defaults to this file's folder; set OTL_APP_DIR to

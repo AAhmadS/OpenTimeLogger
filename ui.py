@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenTimeLogger</title>
+<title>Interval</title>
 <style>
 :root{
   --bg0:#070b12; --bg1:#0a0f16; --bg2:#0f1622;
@@ -317,7 +317,7 @@ body.focus-mode aside{opacity:.6;filter:saturate(.9)}
 <body>
 <div class="titlebar" id="titlebar">
   <img id="tbLogo" class="tb-logo" alt="">
-  <div class="tb-title">OpenTimeLogger</div>
+  <div class="tb-title">Interval</div>
   <div class="tb-sub">time, accounted for</div>
   <div class="tb-center"><div class="tb-badge" id="tbBadge"></div></div>
   <div class="tb-actions">
@@ -334,8 +334,8 @@ body.focus-mode aside{opacity:.6;filter:saturate(.9)}
 <div class="shell">
   <aside class="glass">
     <div class="brand">
-      <img id="brandImg" class="brand-img" alt="OpenTimeLogger">
-      <div><div class="brand-t">OpenTimeLogger</div><div class="brand-s">time, accounted for</div></div>
+      <img id="brandImg" class="brand-img" alt="Interval">
+      <div><div class="brand-t">Interval</div><div class="brand-s">time, accounted for</div></div>
     </div>
     <div class="nav" id="nav">
       <button class="nav-item active" data-tab="active"><span class="n-ico" data-i="play"></span><span>Active</span><span class="n-badge" id="badgeActive" hidden></span></button>

@@ -1,6 +1,6 @@
 <div align="center">
 
-# OpenTimeLogger
+# Interval
 
 **A modern desktop time tracker with an analytics dashboard and an optional BYOK AI workspace — every session stays on your disk.**
 
@@ -13,7 +13,7 @@
 
 ---
 
-OpenTimeLogger is a small, private-by-design desktop app for logging what you work on. Start and stop sessions with a click — or backfill when they *actually* started and ended — and let it silently measure how long you spend writing each session's notes. Everything lives in readable JSON next to the app, one click turns any date range into a filtered Excel workbook, the **Dashboard** shows where your time actually goes, and the **AI workspace** (bring your own API key) turns your logs into tasks, timelines and coaching.
+Interval is a small, private-by-design desktop app for logging what you work on. Start and stop sessions with a click — or backfill when they *actually* started and ended — and let it silently measure how long you spend writing each session's notes. Everything lives in readable JSON next to the app, one click turns any date range into a filtered Excel workbook, the **Dashboard** shows where your time actually goes, and the **AI workspace** (bring your own API key) turns your logs into tasks, timelines and coaching.
 
 No accounts. No cloud. No telemetry. Your time is your file.
 
@@ -103,7 +103,7 @@ OpenTimeLogger/
 
 ## Contributing
 
-OpenTimeLogger is a tiny, focused project — good first contributions:
+Interval is a tiny, focused project — good first contributions:
 
 - Linux/macOS support (the UI is platform-neutral; only the webview host and build are Windows-tuned)
 - A CSV export option

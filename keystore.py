@@ -1,4 +1,4 @@
-"""OS keyring for OpenTimeLogger BYOK secrets (security-auditor).
+"""OS keyring for Interval BYOK secrets (security-auditor).
 
 Windows Credential Locker via ctypes — stdlib only, no third-party wheels.
 `ai_config.json` keeps only {key_id, provider, label} refs; secret bytes live
@@ -10,7 +10,7 @@ fall back to an explicit, user-consented path instead of silent plaintext.
 
 import sys
 
-SERVICE = "OpenTimeLogger/ai"
+SERVICE = "OpenTimeLogger/ai"  # frozen: renaming orphans already-stored keys
 
 CRED_TYPE_GENERIC = 1
 CRED_PERSIST_LOCAL_MACHINE = 2

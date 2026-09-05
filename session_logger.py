@@ -41,7 +41,7 @@ from brand import AVATAR_DATA_URI
 UI_HTML = UI_HTML.replace("const AVATAR_URI=null;",
                           'const AVATAR_URI="%s";' % AVATAR_DATA_URI)
 
-APP_NAME = "OpenTimeLogger"
+APP_NAME = "Interval"
 
 def app_dir():
     if getattr(sys, "frozen", False):

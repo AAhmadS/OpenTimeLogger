@@ -1,4 +1,4 @@
-"""Analytics for OpenTimeLogger.
+"""Analytics for Interval.
 
 Pure-Python, stdlib-only dashboard aggregations over sessions.json.
 All functions are pure; the only module-level state is constants.
