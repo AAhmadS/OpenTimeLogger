@@ -1,6 +1,7 @@
 # user data — never committed
 sessions.json
 exports/
+logs/
 ai_config.json
 tasks.json
 insights.json
