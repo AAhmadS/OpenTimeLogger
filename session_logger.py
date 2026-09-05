@@ -494,6 +494,9 @@ class Api:
     def ai_remove_key(self, key_id):
         return _ai.remove_key(key_id) if _ai else {"error": "ai module missing"}
 
+    def ai_migrate_keys(self):
+        return _ai.migrate_keys_to_keyring() if _ai else {"error": "ai module missing"}
+
     def ai_set_agent(self, agent_id, provider, key_id, model):
         return _ai.set_agent(agent_id, provider, key_id, model) if _ai else {"error": "ai module missing"}
 
@@ -910,6 +913,11 @@ def main():
         print("pywebview is not installed. Run: python -m pip install pywebview")
         return
     api = Api()
+    if _ai is not None:
+        try:
+            _ai.migrate_keys_to_keyring()  # best-effort: legacy inline -> locker
+        except Exception:
+            pass
     webview.settings["DRAG_REGION_SELECTOR"] = ".titlebar"
     webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
     window = webview.create_window(APP_NAME, html=UI_HTML, js_api=api,

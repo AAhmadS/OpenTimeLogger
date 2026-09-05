@@ -1049,7 +1049,7 @@ function aiOnboardingHtml(){
   return `<div class="cards">
     <div class="card glass fade">
       <div class="card-h">${I("sparkles",15)}<div class="card-t">Bring your own key</div></div>
-      <p class="card-sub">Three agents read your logs. Each agent runs on <b>your</b> model — pick a provider and key per agent. Keys never leave this machine.</p>
+      <p class="card-sub">Three agents read your logs. Each agent runs on <b>your</b> model — pick a provider and key per agent. Keys are stored in this machine's OS credential locker, never in files. Billing is yours: set a spend limit on each provider key — analysis runs only on your explicit actions plus the nightly pass.</p>
       ${aiGraphHtml({cur:onb.idx})}
       <div style="background:var(--surface-2);border:1px solid var(--stroke);border-radius:12px;padding:14px">
         <div style="margin-bottom:12px">

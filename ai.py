@@ -18,6 +18,11 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+try:
+    import keystore as _keystore
+except ImportError:
+    _keystore = None
+
 MOCK = False
 
 PROVIDERS = {
@@ -191,11 +196,99 @@ def load_config():
     return cfg
 
 
+def _keyring_ready():
+    return _keystore is not None and _keystore.available()
+
+
+def _sanitized(cfg):
+    """Strip secret material from a config before it touches disk.
+
+    Key entries keep only {provider, label, flags}. Anything else
+    (notably a legacy inline `key`) is dropped here; secrets live in
+    the OS keyring and are resolved at call time via _resolve_secret.
+    """
+    out = dict(cfg)
+    keys = {}
+    for kid, e in (cfg.get("keys") or {}).items():
+        if isinstance(e, dict):
+            keys[kid] = {k: v for k, v in e.items()
+                         if k in ("provider", "label", "plaintext", "legacy")}
+    out["keys"] = keys
+    return out
+
+
+def _resolve_secret(cfg, key_id):
+    """Return the secret for key_id or None. Keyring first, legacy inline
+    `key` field second (pre-migration configs). Never logs the value."""
+    entry = (cfg.get("keys") or {}).get(key_id) or {}
+    if _keyring_ready():
+        res = _keystore.load_key(key_id)
+        if res.get("ok") and res.get("secret"):
+            return res["secret"]
+    if entry.get("key"):
+        return entry["key"]
+    return None
+
+
+def _has_secret(cfg, key_id):
+    return bool(_resolve_secret(cfg, key_id))
+
+
+def _scrub_text(text, secrets):
+    """Redact known secret values from an error string (secret-leak guard)."""
+    if not isinstance(text, str):
+        return text
+    for s in secrets:
+        if s and len(s) >= 4 and s in text:
+            text = text.replace(s, "***")
+    return text
+
+
+def _all_secrets(cfg):
+    out = []
+    for kid, e in (cfg.get("keys") or {}).items():
+        if isinstance(e, dict) and e.get("key"):
+            out.append(e["key"])
+    if _keyring_ready():
+        for kid in (cfg.get("keys") or {}):
+            try:
+                res = _keystore.load_key(kid)
+                if res.get("ok") and res.get("secret"):
+                    out.append(res["secret"])
+            except Exception:
+                continue
+    return out
+
+
+def migrate_keys_to_keyring():
+    """One-shot migration: move legacy inline `key` fields into the OS
+    keyring, then scrub the file. Returns {ok, migrated, skipped, error}."""
+    if not _keyring_ready():
+        return {"ok": False, "error": "OS keyring unavailable on this platform"}
+    cfg = load_config()
+    migrated, skipped = 0, []
+    for kid, e in (cfg.get("keys") or {}).items():
+        if not isinstance(e, dict) or not e.get("key"):
+            continue
+        res = _keystore.save_key(kid, e["key"])
+        if res.get("ok"):
+            migrated += 1
+        else:
+            skipped.append(kid)
+    if skipped:
+        return {"ok": False, "error": "keyring write failed",
+                "migrated": migrated, "skipped": skipped}
+    res = save_config(cfg)  # save_config sanitizes: inline keys dropped
+    if not res.get("ok"):
+        return res
+    return {"ok": True, "migrated": migrated}
+
+
 def save_config(cfg):
     try:
         p = config_path()
         tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(_sanitized(cfg), ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(p)
         return {"ok": True}
     except Exception as e:
@@ -203,11 +296,26 @@ def save_config(cfg):
 
 
 def add_key(provider, label, key):
+    if not provider or not key:
+        return {"ok": False, "error": "provider and key are required"}
     key_id = hashlib.sha1(("%s%s%s" % (provider, label, key)).encode("utf-8")).hexdigest()[:8]
     cfg = load_config()
-    cfg.setdefault("keys", {})[key_id] = {"provider": provider, "label": label, "key": key}
+    entry = {"provider": provider, "label": label}
+    if _keyring_ready():
+        res = _keystore.save_key(key_id, key)
+        if not res.get("ok"):
+            return {"ok": False, "error": res.get("error", "keyring write failed")}
+    else:
+        # No OS locker on this platform: refuse silent plaintext. The caller
+        # (UI) must confirm explicit consent before we persist it inline.
+        return {"ok": False, "error": "OS keyring unavailable — cannot store keys securely on this platform"}
+    cfg.setdefault("keys", {})[key_id] = entry
     res = save_config(cfg)
     if not res.get("ok"):
+        try:
+            _keystore.delete_key(key_id)
+        except Exception:
+            pass
         return res
     return {"ok": True, "key_id": key_id}
 
@@ -217,6 +325,15 @@ def remove_key(key_id):
     if key_id not in cfg.get("keys", {}):
         return {"ok": False, "error": "Key not found"}
     del cfg["keys"][key_id]
+    if _keyring_ready():
+        try:
+            _keystore.delete_key(key_id)
+        except Exception:
+            pass
+    # also drop dangling agent references to the removed key
+    for a in (cfg.get("agents") or {}).values():
+        if isinstance(a, dict) and a.get("key_id") == key_id:
+            a["key_id"] = ""
     res = save_config(cfg)
     if not res.get("ok"):
         return res
@@ -224,9 +341,19 @@ def remove_key(key_id):
 
 
 def set_agent(agent_id, provider, key_id, model):
+    """Bind an agent to provider/key/model. Validates shape instead of
+    clobbering config with malformed UI state (security-auditor)."""
+    if not any(a["id"] == agent_id for a in AGENTS):
+        return {"ok": False, "error": "Unknown agent: %s" % agent_id}
+    if provider not in PROVIDERS:
+        return {"ok": False, "error": "Unknown provider: %s" % provider}
+    if not model or not str(model).strip():
+        return {"ok": False, "error": "Model name is required"}
+    cfg = load_config()
+    if key_id and key_id not in (cfg.get("keys") or {}):
+        return {"ok": False, "error": "Key not found"}
     meta = PROVIDERS.get(provider)
     known = bool(meta) and model in meta.get("chat_models", [])
-    cfg = load_config()
     cfg.setdefault("agents", {})[agent_id] = {
         "provider": provider,
         "key_id": key_id,
@@ -334,26 +461,30 @@ def chat(agent_id, messages, max_tokens=4000, temperature=0.2):
     model = agent.get("custom_model") or agent.get("model")
     if not model:
         return {"ok": True, "text": json.dumps({"mock": True, "agent_id": agent_id, "reply": "OK (no model)"}, ensure_ascii=False)}
-    key_entry = cfg.get("keys", {}).get(agent.get("key_id", ""))
-    if not key_entry or not key_entry.get("key"):
+    secret = _resolve_secret(cfg, agent.get("key_id", ""))
+    if not secret:
         return {"ok": True, "text": json.dumps({"mock": True, "agent_id": agent_id, "reply": "OK (no key)"}, ensure_ascii=False)}
-    return _chat_request(agent.get("provider", ""), key_entry["key"], model, messages, max_tokens, temperature)
+    res = _chat_request(agent.get("provider", ""), secret, model, messages, max_tokens, temperature)
+    if not res.get("ok"):
+        res["error"] = _scrub_text(res.get("error", ""), _all_secrets(cfg))
+    return res
 
 
 def test_model(provider, key_id, model, task_hint):
     if MOCK:
         return {"ok": True, "latency_ms": 5}
     cfg = load_config()
-    key_entry = cfg.get("keys", {}).get(key_id)
-    if not key_entry or not key_entry.get("key"):
+    secret = _resolve_secret(cfg, key_id)
+    if not secret:
         return {"ok": False, "error": "Key not found"}
     ping = "Reply with OK" if not task_hint else str(task_hint)
     t0 = time.time()
-    res = _chat_request(provider, key_entry["key"], model, [{"role": "user", "content": ping}], 4, 0.0)
+    res = _chat_request(provider, secret, model, [{"role": "user", "content": ping}], 4, 0.0)
     lat = int((time.time() - t0) * 1000)
     if res.get("ok"):
         return {"ok": True, "latency_ms": lat}
-    return {"ok": False, "latency_ms": lat, "error": res.get("error", "failed")}
+    return {"ok": False, "latency_ms": lat,
+            "error": _scrub_text(res.get("error", "failed"), _all_secrets(cfg))}
 
 
 def _bare_model(model):
@@ -367,7 +498,7 @@ def fallback_model(agent_id, selected_provider, selected_key_id, selected_model)
     keys = cfg.get("keys", {})
     bare = _bare_model(selected_model)
     for key_id, k in keys.items():
-        if k.get("provider") == selected_provider or not k.get("key"):
+        if k.get("provider") == selected_provider or not _has_secret(cfg, key_id):
             continue
         p = k.get("provider", "")
         meta = PROVIDERS.get(p)
@@ -397,7 +528,7 @@ def fallback_model(agent_id, selected_provider, selected_key_id, selected_model)
         prov = parts[0] if len(parts) > 1 else None
         b = parts[-1]
         for key_id, k in keys.items():
-            if not k.get("key"):
+            if not _has_secret(cfg, key_id):
                 continue
             p = k.get("provider", "")
             if prov and p != prov:
@@ -759,8 +890,8 @@ def transcribe(audio_b64, provider, key_id, model):
     if MOCK:
         return {"ok": True, "text": "[mock] transcribed text from audio"}
     cfg = load_config()
-    k = cfg.get("keys", {}).get(key_id)
-    if not k or not k.get("key"):
+    secret = _resolve_secret(cfg, key_id)
+    if not secret:
         return {"ok": False, "error": "Key not found"}
     try:
         audio = base64.b64decode(audio_b64)
@@ -774,12 +905,12 @@ def transcribe(audio_b64, provider, key_id, model):
     tail += ("--%s--\r\n" % boundary).encode("utf-8")
     body = head + audio + tail
     url = meta["base"] + "/audio/transcriptions"
-    headers = {"Content-Type": "multipart/form-data; boundary=%s" % boundary, "Authorization": "Bearer " + k["key"]}
+    headers = {"Content-Type": "multipart/form-data; boundary=%s" % boundary, "Authorization": "Bearer " + secret}
     try:
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=120) as r:
             resp = json.loads(r.read().decode("utf-8"))
         return {"ok": True, "text": resp.get("text", "")}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": _scrub_text(str(e), _all_secrets(cfg))}
 
