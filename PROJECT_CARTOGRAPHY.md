@@ -304,6 +304,11 @@ Reads logs and proposes:
   actually present); pixel-reading agents (`visual-reviewer`, `asr-librarian`)
   → `opencode-go/mimo-v2.5` (matches global pixel-reader precedent +
   the earlier explicit mimo order); `docs-keeper` → `opencode-go/deepseek-v4-flash`.
+- Pixel readers run on Muse Spark 1.3 (`visual-reviewer` switched off mimo
+  per user-locked design/front-end routing rule: open-design and all
+  design/front-end work use Muse Spark 1.3 via opencode-go or openrouter,
+  never mimo v2.5). `asr-librarian` stays on mimo v2.5 (pure data crawl,
+  not design) unless ruled otherwise.
 - If the provider publishes the exact requested IDs later, it is a one-line
   `model:` change per file.
 
@@ -316,9 +321,27 @@ Reads logs and proposes:
   newlines at import (broke the AI tab at runtime once, caught by preview).
   Owner: `ui-architect` (the `web/` split eliminates the hazard class).
 
-### B.6 Product name correction (2026-09-05, user ruling)
-- The app's name is **Interval**. "OpenTimeLogger" remains the repo / code /
+### B.6 Product name correction (2026-09-05, user ruling)- The app's name is **Interval**. "OpenTimeLogger" remains the repo / code /
   file identity (spec, exe, module docstrings updated cosmetically) and the
   frozen keystore service string (renaming orphans stored keys — see
   `keystore.py`). Frozen §1 body left untouched per the provenance rule.
 - Open Design project + token specimen retitled to Interval.
+
+### B.7 Open Design strict flow outcomes (2026-09-05, fully automated)
+- Project `opentimelogger-redesign` ("Interval Redesign — strict surfaces"):
+  token-specimen.html, dashboard.html (v2), ai-workspace.html,
+  onboarding.html — all saved in-project, all screenshotted to
+  `docs/od-evidence/`, all self-reviewed (visual-reviewer discipline).
+- Review verdicts: tokens PASS; dashboard v1 FAIL (collapsed trend/bar row,
+  oversized heat cells) → v2 PASS (fixed heights); AI workspace PASS with
+  two vocabulary fixes applied at save (statuses → schema vocabulary,
+  finding gained claim text); onboarding PASS with provider chips corrected
+  to our 5 BYOK providers at save.
+- Generation reliability: ~40% of calls return empty/truncated; retry (and
+  splitting oversized briefs) recovers. Never save a truncated artifact —
+  verify closing tags before `od_save_project_file`.
+- Skill override: ui-ux-pro-max suggested blue/amber OLED; overridden by the
+  locked emerald glass brand. Kept: KPI-first ops layout, density-high,
+  checklist as QA gate.
+- Routing rule: design/front-end work uses Muse Spark 1.3 (opencode-go or
+  openrouter), never mimo v2.5 (`visual-reviewer` switched).

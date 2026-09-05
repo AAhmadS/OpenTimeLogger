@@ -1,7 +1,7 @@
 ---
 description: Owns the screenshot review loop — Playwright captures, pixel + DOM checks, findings ledger. Reads only; never edits the UI. Use after any visual change.
 mode: subagent
-model: opencode-go/mimo-v2.5
+model: opencode-go/muse-spark-1.3-contributor
 temperature: 0.1
 permission:
   edit: deny
@@ -39,4 +39,6 @@ surface. Reads ONLY — findings go to a ledger; `ui-architect` fixes.
 ## Constraints
 - Never edit UI code or screenshots directly. Never call paid/provisioned
   model endpoints for review — local and BYOK-free methods only.
+- Design/front-end routing rule (user-locked): screenshot/UI review runs on
+  Muse Spark 1.3, never mimo.
 - Distinguish app bugs from preview-mock artifacts explicitly in the ledger.
