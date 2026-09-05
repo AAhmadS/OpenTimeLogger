@@ -109,7 +109,7 @@ def m_gui_boot(timeout_s=45):
         src = os.path.join(ROOT, fn)
         if os.path.exists(src):
             shutil.copy(src, tmp)
-    for dn in ("assets",):
+    for dn in ("assets", "web"):
         src = os.path.join(ROOT, dn)
         if os.path.isdir(src):
             shutil.copytree(src, os.path.join(tmp, dn),

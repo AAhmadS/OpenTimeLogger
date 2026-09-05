@@ -1,0 +1,1 @@
+try{const k="otl-theme";const s=localStorage.getItem(k);const m=window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches;const t=s||(m?"light":"dark");document.documentElement.setAttribute("data-theme",t);}catch(e){}

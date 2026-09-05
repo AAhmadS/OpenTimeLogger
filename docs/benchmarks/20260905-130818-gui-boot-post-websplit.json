@@ -1,10 +1,10 @@
 {
   "mode": "gui-boot",
-  "at": "2026-09-05T02:01:09",
+  "at": "2026-09-05T13:08:10",
   "python": "3.12.3",
   "result": {
-    "time_to_window_ms": 3533,
-    "peak_rss_mb": 119.1,
+    "time_to_window_ms": 3285,
+    "peak_rss_mb": 121.3,
     "note": "visible top-level window owned by app PID (+4s paint settle)"
   }
 }

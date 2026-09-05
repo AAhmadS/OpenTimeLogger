@@ -364,3 +364,18 @@ Reads logs and proposes:
 - Prune candidates for later: PIL `_avif` codec (7.7 MB, openpyxl doesn't
   need it), `pywebview-android.jar`, non-win portaudio binaries.
   Build deps: pyinstaller + pyinstaller-hooks-contrib (README).
+
+### B.9 web/ split outcomes (2026-09-05)
+- `ui.py` (giant string) → `web/` parts (shell_top, styles.css, head.js,
+  body.html, app.js, shell_tail); `ui.py` is now a 60-line loader (source
+  dir or frozen `_MEIPASS`, shipped via spec datas). Verified by
+  `tests/test_web_split.py` + preview render + gui-boot (3.3 s, 121 MB).
+- Escape audit (old runtime vs raw file bytes): exactly 4 divergence sites.
+  The raw files are CORRECT in all four — the old build was silently
+  mangling two of them: filename sanitizer and path-split regexes lost the
+  backslash (real Windows-path bugs, now fixed); `\n` string escapes were
+  accidentally-correct via double processing. Pinned in tests with
+  zero-ambiguity `chr(92)` assertions.
+- Loader rule going forward: web/ bytes are served raw — JS string escapes
+  SINGLE backslash, regex literal backslashes DOUBLE. Never reintroduce
+  Python-string wrapping of frontend code.
