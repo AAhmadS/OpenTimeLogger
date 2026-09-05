@@ -364,6 +364,14 @@ Reads logs and proposes:
 - Prune candidates for later: PIL `_avif` codec (7.7 MB, openpyxl doesn't
   need it), `pywebview-android.jar`, non-win portaudio binaries.
   Build deps: pyinstaller + pyinstaller-hooks-contrib (README).
+- Postscript: pruned to 194 files / 32.8 MB; exe renamed to `Interval`
+  (`dist/Interval/Interval.exe`). Prune lesson: win-x86/win-arm64
+  WebView2 loaders must STAY — winforms imports edgechromium whose
+  `interop_dll_path` probes them (pruning = FileNotFound at boot).
+- Methodology warning (learned): "visible window owned by PID" is NOT
+  proof — PyInstaller's "Unhandled exception" dialog qualifies. Always
+  assert `MainWindowTitle == "Interval"`. Honest exe numbers: ~3.8 s to
+  the real window, ~107 MB main peak + ~121 MB renderer child.
 
 ### B.9 web/ split outcomes (2026-09-05)
 - `ui.py` (giant string) → `web/` parts (shell_top, styles.css, head.js,

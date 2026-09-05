@@ -1,0 +1,92 @@
+{
+  "mode": "dist-size",
+  "at": "2026-09-05T13:25:03",
+  "python": "3.12.3",
+  "result": {
+    "bytes": 32760487,
+    "mb": 32.8,
+    "entries": 194,
+    "largest": [
+      {
+        "file": "dist\\Interval\\Interval.exe",
+        "kb": 5684.1
+      },
+      {
+        "file": "dist\\Interval\\_internal\\python311.dll",
+        "kb": 5664.3
+      },
+      {
+        "file": "dist\\Interval\\_internal\\libcrypto-3.dll",
+        "kb": 5070.3
+      },
+      {
+        "file": "dist\\Interval\\_internal\\PIL\\_imaging.cp311-win_amd64.pyd",
+        "kb": 2527.5
+      },
+      {
+        "file": "dist\\Interval\\_internal\\base_library.zip",
+        "kb": 1407.3
+      },
+      {
+        "file": "dist\\Interval\\_internal\\unicodedata.pyd",
+        "kb": 1113.8
+      },
+      {
+        "file": "dist\\Interval\\_internal\\ucrtbase.dll",
+        "kb": 1097.5
+      },
+      {
+        "file": "dist\\Interval\\_internal\\libssl-3.dll",
+        "kb": 768.8
+      },
+      {
+        "file": "dist\\Interval\\_internal\\webview\\lib\\Microsoft.Web.WebView2.Core.dll",
+        "kb": 634.6
+      },
+      {
+        "file": "dist\\Interval\\_internal\\pythonnet\\runtime\\Python.Runtime.dll",
+        "kb": 435.5
+      },
+      {
+        "file": "dist\\Interval\\_internal\\PIL\\_webp.cp311-win_amd64.pyd",
+        "kb": 400.0
+      },
+      {
+        "file": "dist\\Interval\\_internal\\_sounddevice_data\\portaudio-binaries\\libportaudio64bit-asio.dll",
+        "kb": 335.0
+      },
+      {
+        "file": "dist\\Interval\\_internal\\_sounddevice_data\\portaudio-binaries\\libportaudio64bit.dll",
+        "kb": 300.5
+      },
+      {
+        "file": "dist\\Interval\\_internal\\PIL\\_imagingcms.cp311-win_amd64.pyd",
+        "kb": 265.0
+      },
+      {
+        "file": "dist\\Interval\\_internal\\_decimal.pyd",
+        "kb": 249.8
+      },
+      {
+        "file": "dist\\Interval\\_internal\\pyexpat.pyd",
+        "kb": 194.8
+      },
+      {
+        "file": "dist\\Interval\\_internal\\pythonnet\\runtime\\System.Net.Http.dll",
+        "kb": 193.8
+      },
+      {
+        "file": "dist\\Interval\\_internal\\pythonnet\\runtime\\Python.Runtime.xml",
+        "kb": 182.9
+      },
+      {
+        "file": "dist\\Interval\\_internal\\_cffi_backend.cp311-win_amd64.pyd",
+        "kb": 174.5
+      },
+      {
+        "file": "dist\\Interval\\_internal\\_ssl.pyd",
+        "kb": 174.3
+      }
+    ]
+  }
+}

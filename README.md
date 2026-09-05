@@ -47,7 +47,7 @@ No accounts. No cloud. No telemetry. Your time is your file.
 
 ### Option A — run the prebuilt app
 
-Grab `OpenTimeLogger.exe` from the [Releases](../../releases) page and double-click it. No Python required.
+Grab `Interval.exe` from the [Releases](../../releases) page and double-click it. No Python required.
 
 > Requires the WebView2 runtime, which ships with Windows 10 and Windows 11.
 
@@ -69,7 +69,7 @@ pip install pyinstaller pyinstaller-hooks-contrib
 pyinstaller --noconfirm --clean OpenTimeLogger.spec
 ```
 
-The onedir bundle lands in `dist/OpenTimeLogger/`. (Onedir is deliberate: onefile
+The onedir bundle lands in `dist/Interval/`. (Onedir is deliberate: onefile
 extracts to `%TEMP%` on every launch — slower start, antivirus rescans and orphaned
 temp dirs. Unused webview backends are excluded in the spec to keep it lean.)
 

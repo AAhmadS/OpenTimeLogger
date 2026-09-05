@@ -18,11 +18,26 @@ a = Analysis(
         'tkinter', 'PyQt5', 'PyQt6', 'PySide2', 'PySide6',
         'matplotlib', 'numpy', 'scipy', 'pandas',
         'IPython', 'jedi', 'pytest', 'setuptools',
+        'PIL.AvifImagePlugin', 'PIL.FpxImagePlugin', 'PIL.MicImagePlugin',
     ],
     noarchive=False,
     optimize=1,  # NOT 2: level 2 strips docstrings, which breaks pycparser
                  # (needed by clr_loader/pythonnet) in frozen boots.
 )
+# Prune dead-weight binaries/datas (verified unneeded on win-x64).
+# NOTE: win-x86 / win-arm64 WebView2 loaders must STAY — winforms imports
+# edgechromium, whose interop_dll_path probes them (pruning = FileNotFound).
+_PRUNE_SUBSTRINGS = (
+    'pywebview-android.jar',
+    'libportaudio.dylib',
+    'portaudioarm64',
+    '32bit',
+    '_avif.',
+)
+a.binaries = TOC([x for x in a.binaries
+                  if not any(k in x[0] for k in _PRUNE_SUBSTRINGS)])
+a.datas = TOC([x for x in a.datas
+               if not any(k in x[0] for k in _PRUNE_SUBSTRINGS)])
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -30,7 +45,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='OpenTimeLogger',
+    name='Interval',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -50,5 +65,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name='OpenTimeLogger',
+    name='Interval',
 )

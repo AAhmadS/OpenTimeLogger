@@ -554,13 +554,7 @@ def main():
                                    background_color="#0a0f16")
     api._win = window
     window.events.closed += api.store._save
-    # Prefer the WebView2-only edgechromium backend (no pythonnet/.NET:
-    # frozen CLR discovery is flaky). Fall back to the default backend.
-    try:
-        webview.start(gui="edgechromium")
-    except Exception as e:
-        log.warning("edgechromium backend failed, falling back: %s", e)
-        webview.start()
+    webview.start()
 
 
 if __name__ == "__main__":
