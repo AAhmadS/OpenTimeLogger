@@ -639,6 +639,9 @@ class Api:
     def asr_transcribe(self, audio_b64, provider, key_id, model):
         return _ai.transcribe(audio_b64, provider, key_id, model) if _ai else {"error": "ai module missing"}
 
+    def ai_asr_allowlist(self):
+        return _ai.asr_allowlist() if _ai else {"error": "ai module missing"}
+
     def _maybe_rollover(self):
         """Log an end-of-day 'documentation' summary for every completed day
         that had documentation time, summing it up per category."""

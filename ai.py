@@ -402,11 +402,20 @@ def list_models(provider, task):
     if not meta:
         return {"ok": True, "models": [], "note": "OpenAI-compatible custom endpoint"}
     if task == "asr":
-        models = list(meta.get("asr_models", []))
         if provider == "google":
-            return {"ok": True, "models": models, "note": "Google AI Studio has no English ASR endpoint"}
-        note = "No ASR models for this provider" if not models else ""
-        return {"ok": True, "models": models, "note": note}
+            return {"ok": True, "models": [], "source": "seed", "stale": True,
+                    "note": "Google AI Studio has no English ASR endpoint"}
+        verified = _asr_verified_for(provider)
+        if verified:
+            return {"ok": True, "models": verified, "source": "allowlist",
+                    "stale": False, "note": ""}
+        n_susp = sum(1 for e in _allowlist().get("entries", [])
+                     if provider in (e.get("providers") or []))
+        note = ("No verified <4%% WER models for this provider "
+                "(see docs/asr-evidence; %d suspended with reasons)" % n_susp) \
+            if n_susp else "No ASR models for this provider"
+        return {"ok": True, "models": [], "source": "allowlist", "stale": False,
+                "note": note}
     models = list(meta.get("chat_models", []))
     cfg = load_config()
     for a in cfg.get("agents", {}).values():
@@ -580,6 +589,47 @@ def test_model(provider, key_id, model, task_hint):
         return {"ok": True, "latency_ms": lat}
     return {"ok": False, "latency_ms": lat,
             "error": _scrub_text(res.get("error", "failed"), _all_secrets(cfg))}
+
+
+def _allowlist():
+    """Load the evidenced ASR allowlist (asr-librarian).
+
+    App-dir override (tests/portable data) wins; falls back to the shipped
+    file next to this module. Never raises."""
+    cands = [app_dir() / "asr_allowlist.json",
+             Path(__file__).resolve().parent / "asr_allowlist.json"]
+    for p in cands:
+        try:
+            if p.exists():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and isinstance(data.get("entries"), list):
+                    return data
+        except (OSError, ValueError):
+            continue
+    return {"snapshot_date": "", "source": "", "gate": "", "entries": []}
+
+
+def asr_allowlist():
+    """Full allowlist entries (verified + suspended with reasons) for the
+    settings UI, which renders non-verified rows disabled."""
+    data = _allowlist()
+    return {"ok": True, "snapshot_date": data.get("snapshot_date", ""),
+            "source": data.get("source", ""), "gate": data.get("gate", ""),
+            "entries": data.get("entries", [])}
+
+
+def _asr_verified(provider, model):
+    for e in _allowlist().get("entries", []):
+        if e.get("api_id") == model and provider in (e.get("providers") or []) \
+                and e.get("status") == "verified":
+            return True
+    return False
+
+
+def _asr_verified_for(provider):
+    return [e.get("api_id") for e in _allowlist().get("entries", [])
+            if provider in (e.get("providers") or []) and e.get("status") == "verified"
+            and e.get("api_id")]
 
 
 def _bare_model(model):
@@ -978,6 +1028,12 @@ def transcribe(audio_b64, provider, key_id, model):
         if provider == "google":
             return {"ok": False, "error": "Google AI Studio has no English ASR endpoint"}
         return {"ok": False, "error": "This provider has no ASR models"}
+    if not _asr_verified(provider, model):
+        verified = _asr_verified_for(provider)
+        return {"ok": False,
+                "error": "Model '%s' is not on the verified <4%% WER allowlist "
+                         "(evidence: docs/asr-evidence). Currently verified for %s: %s."
+                         % (model, provider, verified or "none")}
     if MOCK:
         return {"ok": True, "text": "[mock] transcribed text from audio"}
     cfg = load_config()

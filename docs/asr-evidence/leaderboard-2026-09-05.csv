@@ -1,0 +1,57 @@
+model,vendor,whisper_version,wer_percent,speed_factor,price_usd_per_1000min
+Qwen3.5 Omni Flash,Alibaba Cloud,,13.5,76.4,0.00
+Qwen3.5 Omni Plus,Alibaba Cloud,,3.5,94.8,0.00
+Nova 2 Pro,Amazon Bedrock,,4.9,22.7,3.10
+Amazon Transcribe,Amazon Bedrock,,4.1,16.4,6.00
+Universal-3 Pro,AssemblyAI,,3.1,87.4,3.50
+Universal AssemblyAI,AssemblyAI,,3.8,117.2,2.50
+MAI-Transcribe-2,Microsoft AI,,2.0,410.7,1.67
+MAI-Transcribe-1.5,Microsoft AI,,2.4,192.6,6.00
+MAI-Transcribe-1,Microsoft AI,,2.6,67.4,6.00
+transcribe-03-2026,Cohere,,4.6,114.3,0.00
+Nova-3,Deepgram,,5.2,572.8,4.30
+Nova-3 Telnyx,Telnyx,,4.8,369.3,7.40
+Nova-2 Telnyx,Telnyx,,5.1,363.5,7.40
+Scribe v2,ElevenLabs,,2.2,54.7,3.67
+Solaria-1 Gladia,Gladia,,4.1,82.4,10.17
+Solaria-3 Gladia,Gladia,,3.2,63.6,10.16
+Chirp 3 Google,Google,,4.3,29.0,16.00
+Chirp,Google,,31.2,14.4,16.00
+Gemini 3.5 Transcribe,Google,,2.6,89.7,5.00
+Gemini 3.1 Pro Preview (High),Google,,2.8,6.2,18.15
+Gemini 3.1 Pro Preview (Low),Google,,3.6,6.1,7.72
+Gemini 3 Flash (High),Google,,2.9,23.4,13.70
+Gemini 2.5 Flash Lite,Google,,5.2,83.6,6.56
+Gemini 2.5 Flash,Google,,5.1,87.3,6.66
+Gemini 2.5 Pro,Google,,2.9,11.2,11.39
+Gemini 3.1 Flash-Lite Preview (Minimal),Google,,3.4,82.3,5.83
+Gradium Speech-to-Text,Gradium,,6.8,2.3,13.00
+Grok Speech to Text,SpaceXAI,,4.0,219.9,1.67
+Inworld STT 1,Inworld,,3.9,216.9,2.50
+Voxtral Mini Transcribe 2,Mistral,,3.6,83.7,3.00
+Voxtral Small,Mistral,,2.8,65.8,4.00
+Voxtral Mini,DeepInfra,,3.8,78.6,1.00
+Modulate STT Batch English VFast,Modulate,,4.2,60.2,0.42
+Canary Qwen 2.5B NVIDIA,Replicate,,4.3,7.4,0.74
+Parakeet TDT 0.6B V2 NVIDIA,NVIDIA,,6.4,99.7,0.00
+Parakeet RNNT 1.1B,Replicate,,5.4,6.3,1.91
+GPT Transcribe OpenAI,OpenAI,,3.3,37.9,4.50
+GPT-4o Transcribe,OpenAI,,4.0,36.5,6.00
+GPT-4o Mini Transcribe,OpenAI,,4.5,40.6,3.00
+Smallest AI Pulse Pro,Smallest.ai,,2.4,273.2,4.00
+Resonant-1,Reson8,,3.4,329.7,3.60
+Rev AI,Rev AI,,5.9,11.8,3.33
+Smallest AI Pulse,Smallest.ai,,4.4,283.3,5.00
+Soniox v5 Async,Soniox,,3.8,36.8,1.66
+Soniox V4,Soniox,,3.9,44.3,1.66
+Speechmatics Melia,Speechmatics,,4.9,187.8,4.00
+Speechmatics Standard,Speechmatics,,5.1,96.1,7.50
+Speechmatics Enhanced,Speechmatics,,4.0,68.0,12.50
+StepAudio 2.5 ASR StepFun,StepFun,,4.7,84.5,0.37
+Whisper Large v3 Turbo,Groq,v3 Turbo,4.6,150.5,0.67
+Whisper Large v3 Turbo Telnyx,Telnyx,,5.5,30.4,15.00
+Wizper Large v3,fal.ai,large-v3,4.7,227.3,0.50
+Incredibly Fast Whisper,Replicate,large-v3,5.7,54.5,1.49
+Whisper Large v3,Replicate,large-v3,10.1,2.6,4.23
+Whisper Large v3,fal.ai,large-v3,4.1,104.6,1.15
+Whisper Large v2,OpenAI,large-v2,4.1,29.1,6.00
