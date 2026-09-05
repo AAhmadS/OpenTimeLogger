@@ -441,10 +441,19 @@ def tick(force=False):
             due.append("refine")
     else:
         st.pop("changes_pending_since", None)
+    # D2 end-of-day (locked 23:30): the designated nightly job — fires even
+    # inside quiet hours (23:00-07:00); D3 debounce still queues for 07:00.
+    today = datetime.now().strftime("%Y-%m-%d")
+    now_hm = datetime.now().strftime("%H:%M")
+    if now_hm >= "23:30" and st.get("last_eod") != today and not st.get("eod_running"):
+        due.append("eod")
     _save_scheduler_state(st)
     import threading
     for job in due:
-        t = threading.Thread(target=_run_job, args=(job,), daemon=True)
+        if job == "eod":
+            t = threading.Thread(target=_run_eod, daemon=True)
+        else:
+            t = threading.Thread(target=_run_job, args=(job,), daemon=True)
         t.start()
         started.append(job)
     return {"ok": True, "throttled": False, "due": due, "started": started}
@@ -495,6 +504,47 @@ def _run_job(job):
         except Exception as e:
             log_run({"kind": "run_error", "trigger": "D3-session-change",
                      "job": "refine", "error": str(e)})
+
+
+def _run_eod():
+    import ai
+    from datetime import date as _date
+    st = _scheduler_state()
+    if st.get("eod_running"):
+        return
+    st["eod_running"] = True
+    _save_scheduler_state(st)
+    log_run({"kind": "run_start", "trigger": "D2-end-of-day", "job": "eod"})
+    try:
+        cfg = ai.load_config()
+        cs = detect_changes()
+        ids = set(cs["added"]) | set(cs["edited"])
+        run_session_analyzer_v2(cfg, session_ids=ids or None)
+        assign_tasks()
+        maintain_patterns()
+        r19 = check_confounders()
+        weekly_due = True
+        try:
+            last = st.get("last_weekly_coach", "")
+            weekly_due = (not last) or (
+                (_date.today() - _date(*map(int, last.split("-")))).days >= 7)
+        except Exception:
+            weekly_due = True
+        narrator = None
+        if weekly_due:
+            r = run_coach_refresh(cfg)
+            narrator = r.get("narrator")
+            st["last_weekly_coach"] = _date.today().isoformat()
+        commit_snapshot(detect_changes()["hashes"])
+        st["last_eod"] = _date.today().isoformat()
+        log_run({"kind": "run_done", "trigger": "D2-end-of-day", "job": "eod",
+                 "findings": r19, "weekly_narrator": bool(narrator)})
+    except Exception as e:
+        log_run({"kind": "run_error", "trigger": "D2-end-of-day", "job": "eod",
+                 "error": str(e)})
+    finally:
+        st["eod_running"] = False
+        _save_scheduler_state(st)
 
 
 def graph_status():
@@ -1072,6 +1122,439 @@ def export_dpo_rows_v2():
     except OSError as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "count": len(rows), "path": str(path)}
+
+
+    ok = all(r.get("ok") for r in (r6, r7, r8, r10))
+    return {"ok": ok, "timeline": r6, "challenges": r7, "steps": r8,
+            "propositions": r10}
+
+
+# =====================================================================
+# Phase 3 — coach suite (graph-builder-p3): N14-N20 + D2 end-of-day
+# =====================================================================
+
+def _ended_sessions():
+    from datetime import timedelta  # noqa: F401 (kept local for clarity)
+    return [s for s in _sessions_all()
+            if s.get("end") and s.get("kind") != "daily-doc-summary"
+            and _parse_dt(s.get("start")) and _parse_dt(s.get("end"))]
+
+
+def _sess_minutes(s):
+    try:
+        return max(0.0, (_parse_dt(s["end"]) - _parse_dt(s["start"])).total_seconds() / 60.0)
+    except Exception:
+        return 0.0
+
+
+# ---------------- N14 — Pattern DB Maintainer ----------------
+
+def _shape_of(text):
+    import re
+    t = (text or "").lower()
+    words = re.findall(r"[a-z]+", t)
+    has_nums = bool(re.search(r"\d", t))
+    has_q = "?" in t
+    bucket = "s" if len(words) < 15 else ("m" if len(words) < 50 else "l")
+    return (bucket, has_nums, has_q)
+
+
+def _jaccard(a, b):
+    sa, sb = set(a.split()), set(b.split())
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
+def maintain_patterns():
+    """Cluster log excerpts by structural shape (local, no LLM).
+
+    patterns.json: [{shape_id, name, examples[] (own excerpts),
+    ambiguity_note, improved_wording, recurrence_count, last_seen}].
+    improved_wording is a local template in P3; N15 refines per point.
+    """
+    import re
+    shapes = _read_json("patterns.json", {})
+    if not isinstance(shapes, dict):
+        shapes = {}
+    for s in _ended_sessions():
+        for field in ("describe", "notes"):
+            text = (s.get(field) or "").strip()
+            if len(text) < 12:
+                continue
+            key = "%s|%s" % (s.get("category") or "?", _shape_of(text))
+            norm = re.sub(r"\d+", "#", text.lower())
+            match = None
+            for sid, sh in shapes.items():
+                if sh.get("key") == key and _jaccard(norm, sh.get("norm", "")) >= 0.4:
+                    match = sid
+                    break
+            if match is None:
+                import hashlib as _hl
+                sid = "shape-" + _hl.sha1(key.encode()).hexdigest()[:8]
+                shapes[sid] = {"shape_id": sid, "key": key, "norm": norm,
+                               "name": "Recurring %s log in %s" % (
+                                   field, s.get("category") or "work"),
+                               "examples": [], "ambiguity_note": "",
+                               "improved_wording": "", "recurrence_count": 0,
+                               "last_seen": None}
+                match = sid
+            sh = shapes[match]
+            if text not in sh["examples"]:
+                sh["examples"] = (sh["examples"] + [text[:500]])[:3]
+            sh["recurrence_count"] += 1
+            sh["last_seen"] = (s.get("start") or "")[:10]
+    for sh in shapes.values():
+        if not sh.get("ambiguity_note"):
+            sh["ambiguity_note"] = (
+                "Entries with this shape state activity but not outcome: "
+                "add what was attempted, what resulted, and any open question.")
+            sh["improved_wording"] = (
+                "Topic: … | Attempted: … | Result (numbers where possible): … | Open: …")
+    _write_json("patterns.json", shapes)
+    return {"ok": True, "shapes": len(shapes)}
+
+
+# ---------------- N16/N18 — Hypothesis enumerators (local) ----------------
+
+def enumerate_hypotheses():
+    """Testable hypotheses ONLY (N16/N18) — claims come from N19.
+
+    Kinds: best_hour, best_weekday, task_on_weekday, after_effect, gap_norm.
+    Each carries candidate_confounders for N19 to actually check.
+    """
+    sessions = _ended_sessions()
+    hyps = [{"id": "h-hour", "kind": "best_hour",
+             "claim_template": "Most focused work happens around hour H",
+             "variables": ["start_hour"], "candidate_confounders": ["weekday", "category"]},
+            {"id": "h-weekday", "kind": "best_weekday",
+             "claim_template": "Weekday D yields the most focused minutes",
+             "variables": ["weekday"], "candidate_confounders": ["category", "hour"]},
+            {"id": "h-gap", "kind": "gap_norm",
+             "claim_template": "Unusually long gaps precede rushed sessions",
+             "variables": ["inter_gap"], "candidate_confounders": ["weekday", "hour"]}]
+    cats = sorted({s.get("category") or "?" for s in sessions})
+    for c in cats[:6]:
+        hyps.append({"id": "h-cat-%s" % c[:12], "kind": "task_on_weekday",
+                     "claim_template": "Category %s performs best on weekday D" % c,
+                     "variables": ["category", "weekday"], "category": c,
+                     "candidate_confounders": ["hour", "other_tasks"]})
+    for a in cats[:4]:
+        for b in cats[:4]:
+            if a != b:
+                hyps.append({"id": "h-after-%s-%s" % (a[:8], b[:8]), "kind": "after_effect",
+                             "claim_template": "%s after %s changes %s sessions" % (b, a, b),
+                             "variables": ["sequence"], "cat_after": a, "cat_then": b,
+                             "candidate_confounders": ["weekday", "hour"]})
+    return hyps
+
+
+# ---------------- N19 — Confounder Checker (LOCAL, LLM-free) ----------------
+
+MIN_N = 5
+LUNCH = (12, 14)
+
+
+def _mean(xs):
+    import statistics
+    return statistics.mean(xs) if xs else 0.0
+
+
+def check_confounders():
+    """Compute every hypothesis from real data with confounder checks.
+
+    Findings ONLY. Small samples (n<MIN_N) -> insufficient_data, never a
+    claim. This is the sole node allowed to emit 'we checked X' text.
+    """
+    import statistics
+    sessions = _ended_sessions()
+    for s in sessions:
+        s["_min"] = _sess_minutes(s)
+        s["_dt"] = _parse_dt(s["start"])
+    window = "%s..%s" % (min((s["start"] for s in sessions), default="?")[:10],
+                         max((s["start"] for s in sessions), default="?")[:10])
+    findings = []
+
+    def add(fid, claim, metric, effect, base, checked, residual, n):
+        if n < MIN_N:
+            findings.append({"id": fid, "claim": claim, "metric": metric,
+                             "effect_size": None, "base_rate": base,
+                             "confounders_checked": [], "residual_confounders": checked + residual,
+                             "data_window": window, "n": n, "verdict": "insufficient_data"})
+        else:
+            findings.append({"id": fid, "claim": claim, "metric": metric,
+                             "effect_size": round(effect, 3), "base_rate": round(base, 2),
+                             "confounders_checked": checked, "residual_confounders": residual,
+                             "data_window": window, "n": n, "verdict": "claim"})
+
+    # H-hour / H-weekday: best bucket vs overall mean, confounder = other axis
+    by_hour, by_wd = {}, {}
+    for s in sessions:
+        by_hour.setdefault(s["_dt"].hour, []).append(s["_min"])
+        by_wd.setdefault(s["_dt"].weekday(), []).append(s["_min"])
+    overall = _mean([s["_min"] for s in sessions])
+    if by_hour:
+        h = max(by_hour, key=lambda k: _mean(by_hour[k]))
+        # confounder check: does the lead survive within each weekday?
+        survives = sum(1 for wd in by_wd
+                       if [x for x in sessions if x["_dt"].weekday() == wd and x["_dt"].hour == h])
+        add("f-hour", "Most focused work happens around %02d:00" % h,
+            "mean minutes", _mean(by_hour[h]) - overall, overall,
+            ["weekday"] if survives >= MIN_N else [], ["weekday", "category"],
+            len(by_hour[h]))
+    if by_wd:
+        wd = max(by_wd, key=lambda k: _mean(by_wd[k]))
+        names = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+        add("f-weekday", "%s yields the most focused minutes" % names[wd],
+            "mean minutes", _mean(by_wd[wd]) - overall, overall,
+            ["category"] if len(by_wd[wd]) >= MIN_N else [], ["category", "hour"],
+            len(by_wd[wd]))
+
+    # H-cat: category X on weekday D vs X elsewhere (confounder: hour, lunch)
+    for h in enumerate_hypotheses():
+        if h["kind"] != "task_on_weekday":
+            continue
+        c = h["category"]
+        xs = [s for s in sessions if (s.get("category") or "?") == c]
+        if not xs:
+            continue
+        per_wd = {}
+        for s in xs:
+            per_wd.setdefault(s["_dt"].weekday(), []).append(s["_min"])
+        best = max(per_wd, key=lambda k: _mean(per_wd[k]))
+        rest = [s["_min"] for s in xs if s["_dt"].weekday() != best]
+        names = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+        # lunch check: exclude 12-14, does the lead survive?
+        no_lunch = [s["_min"] for s in xs if s["_dt"].weekday() == best
+                    and not (LUNCH[0] <= s["_dt"].hour < LUNCH[1])]
+        checked = ["hour"] if len(no_lunch) >= MIN_N and _mean(no_lunch) > _mean(rest) else []
+        add("f-cat-%s" % c[:12], "%s performs best on %s" % (c, names[best]),
+            "mean minutes", _mean(per_wd[best]) - _mean(rest), _mean(rest),
+            checked, ["hour", "other_tasks", "lunch_routine"], len(per_wd[best]))
+
+    # H-after: X-after-Y sequences vs Y-baseline within same weekday
+    ordered = sorted(sessions, key=lambda s: s["_dt"])
+    for h in enumerate_hypotheses():
+        if h["kind"] != "after_effect":
+            continue
+        a, b = h["cat_after"], h["cat_then"]
+        seq, base = [], []
+        for prev, cur in zip(ordered, ordered[1:]):
+            gap = (cur["_dt"] - _parse_dt(prev["end"])).total_seconds() / 60.0 \
+                if prev.get("end") else None
+            if gap is None or gap < 0 or gap > 8 * 60:
+                continue
+            if (prev.get("category") or "?") == a and (cur.get("category") or "?") == b:
+                seq.append((cur, gap))
+            elif (cur.get("category") or "?") == b:
+                base.append(cur["_min"])
+        if not seq:
+            continue
+        seq_min = [c["_min"] for c, _ in seq]
+        # same-weekday control: compare against baseline on the same weekdays
+        wds = {c["_dt"].weekday() for c, _ in seq}
+        ctrl = [x for x in base]  # baseline pool (residual: weekday mix noted)
+        checked = ["weekday"] if len([c for c, _ in seq]) >= MIN_N else []
+        add("f-after-%s-%s" % (a[:8], b[:8]),
+            "%s after %s averages %.0f min vs %.0f baseline" % (
+                b, a, _mean(seq_min), _mean(ctrl) if ctrl else 0),
+            "mean minutes", _mean(seq_min) - (_mean(ctrl) if ctrl else 0),
+            _mean(ctrl) if ctrl else 0, checked,
+            ["weekday", "hour", "gap_length"], len(seq_min))
+
+    # H-gap: median inter-session gap; long gaps (>4x median) before sessions
+    gaps = []
+    for prev, cur in zip(ordered, ordered[1:]):
+        if prev.get("end"):
+            g = (cur["_dt"] - _parse_dt(prev["end"])).total_seconds() / 60.0
+            if 0 <= g <= 24 * 60:
+                gaps.append(g)
+    if gaps:
+        import statistics as _st
+        med = _st.median(gaps)
+        long_gaps = [g for g in gaps if g > 4 * med] if med > 0 else []
+        add("f-gap", "Your normal gap is ~%.0f min; %d long gaps observed" % (med, len(long_gaps)),
+            "median gap min", float(med), float(med), ["weekday", "hour"], [],
+            len(gaps))
+
+    store = {"findings": findings, "generated_at": _now(), "window": window}
+    _write_json("findings.json", store)
+    return {"ok": True, "findings": len(findings),
+            "claims": sum(1 for f in findings if f.get("verdict") == "claim")}
+
+
+# ---------------- N17 — Divider (local numbers) ----------------
+
+def _sub_split(describe, notes):
+    t = ("%s\n%s" % (describe or "", notes or "")).lower()
+    if any(w in t for w in ("pdf", "paper", "arxiv", "book", "article")):
+        return "PDFs/papers"
+    if any(w in t for w in ("tab", "browser", "chrome", "site", "website", "stackoverflow")):
+        return "browser tabs"
+    if any(w in t for w in ("video", "youtube", "course", "lecture")):
+        return "video"
+    if any(w in t for w in ("meeting", "call", "sync", "standup")):
+        return "meetings"
+    return "other"
+
+
+def divide_time():
+    """C3 numbers, computed locally: shares, sub-splits, trend, edge metrics."""
+    sessions = _ended_sessions()
+    total = sum(s["_min"] if "_min" in s else _sess_minutes(s) for s in sessions) or 1.0
+    for s in sessions:
+        s.setdefault("_min", _sess_minutes(s))
+    by_cat, sub = {}, {}
+    for s in sessions:
+        c = s.get("category") or "?"
+        by_cat[c] = by_cat.get(c, 0.0) + s["_min"]
+        k = (c, _sub_split(s.get("describe"), s.get("notes")))
+        sub[k] = sub.get(k, 0.0) + s["_min"]
+    shares = [{"name": c, "share": round(m / total, 4), "minutes": round(m, 1)}
+              for c, m in sorted(by_cat.items(), key=lambda kv: -kv[1])]
+    subs = [{"category": c, "split": sp, "share": round(m / total, 4)}
+            for (c, sp), m in sorted(sub.items(), key=lambda kv: -kv[1])]
+    # trend: weekly shares, last 8 weeks
+    weeks = {}
+    for s in sessions:
+        d = s["_dt"] if "_dt" in s else _parse_dt(s["start"])
+        wk = (d.date() - __import__("datetime").timedelta(days=d.weekday())).isoformat()
+        w = weeks.setdefault(wk, {})
+        w[s.get("category") or "?"] = w.get(s.get("category") or "?", 0.0) + s["_min"]
+    trend = [{"week": wk, "shares": {c: round(m / (sum(v.values()) or 1), 3)
+                                    for c, m in v.items()}}
+             for wk, v in sorted(weeks.items())[-8:]]
+    # edge metrics: p90 length, pre-break endings, fatigue cues
+    import statistics as _st
+    lens = sorted(s["_min"] for s in sessions)
+    p90 = lens[min(len(lens) - 1, int(len(lens) * 0.9))] if lens else 0
+    ordered = sorted(sessions, key=lambda s: s["_dt"] if "_dt" in s else _parse_dt(s["start"]))
+    pre_break = 0
+    for prev, cur in zip(ordered, ordered[1:]):
+        if prev.get("end"):
+            g = ((cur["_dt"] if "_dt" in cur else _parse_dt(cur["start"]))
+                 - _parse_dt(prev["end"])).total_seconds() / 60.0
+            if g >= 120:
+                pre_break += 1
+    fatigue_words = ("rush", "tired", "exhaust", "hasty", "late night", "sloppy")
+    fatigue = sum(1 for s in sessions
+                  if any(w in ("%s %s" % (s.get("describe") or "", s.get("notes") or "")).lower()
+                         for w in fatigue_words))
+    return {"shares": shares, "sub_splits": subs, "trend": trend,
+            "edge": {"p90_min": round(p90, 1), "pre_break_endings": pre_break,
+                     "fatigue_cues": fatigue, "n": len(sessions)}}
+
+
+# ---------------- N15 — Style Critic ----------------
+
+def run_style_critic(cfg):
+    """C1: one point per eligible pattern shape. Excerpt MUST come from the
+    user's own pattern DB (no invented quotes — N22-style check inline)."""
+    import ai
+    shapes = _read_json("patterns.json", {})
+    points = []
+    for sid, sh in sorted(shapes.items()):
+        if not sh.get("examples") or (sh.get("recurrence_count") or 0) < 2:
+            continue
+        excerpt = sh["examples"][0]
+        if ai.MOCK or cfg.get("mock"):
+            point = {"issue": "Activity stated without outcome (%s)" % sh.get("name"),
+                     "example_from_log": excerpt,
+                     "suggestion": "Use: Topic | Attempted | Result (numbers) | Open. " +
+                                   sh.get("improved_wording", ""),
+                     "benefit": "Future reports can cite results instead of re-reading logs."}
+        else:
+            text, ok = ai._agent_chat(
+                cfg, "coach",
+                "Give ONE logging-style point as JSON {issue, suggestion, benefit} "
+                "for this recurring log shape. Do NOT quote or invent excerpts.\n"
+                "Shape: %s\nExample: %s" % (sh.get("name"), excerpt[:400]), {})
+            if not ok:
+                continue
+            data = ai._extract_json(text)
+            if not isinstance(data, dict) or not data.get("suggestion"):
+                continue
+            point = {"issue": data.get("issue", ""), "example_from_log": excerpt,
+                     "suggestion": data.get("suggestion", ""),
+                     "benefit": data.get("benefit", "")}
+        v = verify("style_point", {"point_id": sid, "excerpt_ref": sid,
+                                   "ambiguity": point["issue"],
+                                   "improved_wording": point["suggestion"],
+                                   "benefit": point["benefit"]})
+        if v.get("ok") and point["example_from_log"] in sh["examples"]:
+            points.append({"point_id": sid, **point, "pattern_shape_id": sid})
+    return {"ok": True, "points": points}
+
+
+# ---------------- N20 — Coach Narrator ----------------
+
+def render_coach(cfg, division=None, style_points=None):
+    """Assemble C1–C5. Finding claim strings render VERBATIM; a local
+    post-pass re-appends any claim the prose dropped (fail-safe honesty)."""
+    import ai
+    findings = _read_json("findings.json", {}).get("findings", [])
+    claims = ["%s [n=%s, window %s]" % (f["claim"], f["n"], f.get("data_window", "?"))
+              for f in findings if f.get("verdict") == "claim"]
+    division = division if division is not None else divide_time()
+    style_points = style_points if style_points is not None \
+        else run_style_critic(cfg).get("points", [])
+    ideal = (cfg.get("ideal_time") or {})
+    ask_block = "" if ideal.get("set") else (
+        "To sharpen this analysis, tell me your ideal time-of-day, days, and "
+        "work hours (Coach tab → ideal hours).")
+    if ai.MOCK or cfg.get("mock"):
+        body = "## Work-time patterns\n" + "\n".join("- " + c for c in claims)
+        body += "\n\n## Time division\n" + "\n".join(
+            "- %s: %.1f%%" % (s["name"], s["share"] * 100) for s in division["shares"])
+        body += "\n\n## Logging style\n" + "\n".join(
+            "- %s (e.g. you wrote: %s…)" % (p["issue"], p["example_from_log"][:80])
+            for p in style_points)
+        if ask_block:
+            body += "\n\n## Ideal hours\n" + ask_block
+    else:
+        prompt = ("You are a work coach. Write concise markdown with sections "
+                  "## Work-time patterns, ## Time division, ## Logging style. "
+                  "RULES: quote each CLAIM below character-for-character at least "
+                  "once; never alter numbers; never add unchecked claims.\n\n"
+                  "CLAIMS:\n" + "\n".join("- " + c for c in claims) +
+                  "\n\nDIVISION:\n" + json.dumps(division, ensure_ascii=False)[:2000] +
+                  "\n\nSTYLE POINTS:\n" + json.dumps(style_points, ensure_ascii=False)[:3000])
+        text, ok = ai._agent_chat(cfg, "coach", prompt, {})
+        body = text if ok and text else ""
+    # post-pass: every claim must appear verbatim, else append raw
+    missing = [c for c in claims if c not in body]
+    if missing:
+        body += "\n\n## Verified findings (quoted)\n" + "\n".join("- " + c for c in missing)
+    if ask_block and "Ideal hours" not in body:
+        body += "\n\n## Ideal hours\n" + ask_block
+    _write_json("coach.json", {"body": body, "generated_at": _now(),
+                               "claims": len(claims), "missing": len(missing)})
+    return {"ok": True, "claims": len(claims), "appended_raw": len(missing)}
+
+
+def run_coach_refresh(cfg):
+    """P3 staged run: patterns -> hypotheses/checks -> division -> style ->
+    narrator. Returns stage results for the run log."""
+    r14 = maintain_patterns()
+    hyps = enumerate_hypotheses()
+    r19 = check_confounders()
+    div = divide_time()
+    r15 = run_style_critic(cfg)
+    r20 = render_coach(cfg, division=div, style_points=r15.get("points", []))
+    log_run({"kind": "run_done", "trigger": "manual", "job": "coach-refresh",
+             "patterns": r14, "hypotheses": len(hyps),
+             "findings": r19, "style_points": len(r15.get("points", [])),
+             "narrator": r20})
+    return {"ok": True, "patterns": r14, "hypotheses": len(hyps),
+            "findings": r19, "style_points": len(r15.get("points", [])),
+            "narrator": r20}
+
+
+def get_coach():
+    c = _read_json("coach.json", None)
+    if not c:
+        return {"ok": True, "coach": None}
+    return {"ok": True, "coach": c}
 
 
 # ---------------- P2 pipeline convenience ----------------

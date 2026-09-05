@@ -528,6 +528,19 @@ class Api:
     def ai_export_dpo2(self):
         return _graph.export_dpo_rows_v2() if _graph else {"error": "graph module missing"}
 
+    def ai_coach_refresh(self):
+        if not _graph or not _ai:
+            return {"error": "graph module missing"}
+        return _graph.run_coach_refresh(_ai.load_config())
+
+    def ai_get_coach(self):
+        return _graph.get_coach() if _graph else {"error": "graph module missing"}
+
+    def ai_get_ideal_time(self):
+        if not _ai:
+            return {"error": "ai module missing"}
+        return {"ok": True, "ideal_time": _ai.load_config().get("ideal_time")}
+
     def ai_set_agent(self, agent_id, provider, key_id, model):
         return _ai.set_agent(agent_id, provider, key_id, model) if _ai else {"error": "ai module missing"}
 
