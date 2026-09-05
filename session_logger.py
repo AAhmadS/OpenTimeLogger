@@ -30,6 +30,11 @@ try:
 except ImportError:
     _ai = None
 
+try:
+    import aigraph as _graph
+except ImportError:
+    _graph = None
+
 from ui import UI_HTML
 from brand import AVATAR_DATA_URI
 
@@ -496,6 +501,12 @@ class Api:
 
     def ai_migrate_keys(self):
         return _ai.migrate_keys_to_keyring() if _ai else {"error": "ai module missing"}
+
+    def ai_tick(self):
+        return _graph.tick() if _graph else {"error": "graph module missing"}
+
+    def ai_graph_status(self):
+        return _graph.graph_status() if _graph else {"error": "graph module missing"}
 
     def ai_set_agent(self, agent_id, provider, key_id, model):
         return _ai.set_agent(agent_id, provider, key_id, model) if _ai else {"error": "ai module missing"}

@@ -23,6 +23,11 @@ try:
 except ImportError:
     _keystore = None
 
+try:
+    import aigraph as _graph
+except ImportError:
+    _graph = None
+
 MOCK = False
 
 PROVIDERS = {
@@ -465,6 +470,13 @@ def chat(agent_id, messages, max_tokens=4000, temperature=0.2):
     if not secret:
         return {"ok": True, "text": json.dumps({"mock": True, "agent_id": agent_id, "reply": "OK (no key)"}, ensure_ascii=False)}
     res = _chat_request(agent.get("provider", ""), secret, model, messages, max_tokens, temperature)
+    if _graph is not None:
+        try:
+            _graph.meter_call(agent_id, agent.get("provider", ""), model,
+                              json.dumps(messages, ensure_ascii=False),
+                              res.get("text", "") if res.get("ok") else "")
+        except Exception:
+            pass
     if not res.get("ok"):
         res["error"] = _scrub_text(res.get("error", ""), _all_secrets(cfg))
     return res
@@ -481,6 +493,12 @@ def test_model(provider, key_id, model, task_hint):
     t0 = time.time()
     res = _chat_request(provider, secret, model, [{"role": "user", "content": ping}], 4, 0.0)
     lat = int((time.time() - t0) * 1000)
+    if _graph is not None:
+        try:
+            _graph.meter_call("model-test", provider, model, ping,
+                              "OK" if res.get("ok") else "")
+        except Exception:
+            pass
     if res.get("ok"):
         return {"ok": True, "latency_ms": lat}
     return {"ok": False, "latency_ms": lat,
